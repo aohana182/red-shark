@@ -1,0 +1,9 @@
+faster-whisper
+sounddevice
+pywin32
+pystray
+pytest
+ruff
+
+# llama-cpp-python deferred: no prebuilt wheel for this machine's Python 3.14,
+# source build needs a C++ compiler that isn't installed. Resolve before Task 7.
