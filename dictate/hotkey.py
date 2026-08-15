@@ -47,6 +47,14 @@ class HotkeyStateMachine:
         self._armed_at: float | None = None
 
     def key_down(self, vk: int, now: float) -> None:
+        # Callbacks must never run while holding _lock: on_stop() calls
+        # inject(), which calls SendInput(), which -- because our hook is
+        # global -- re-enters this same thread's hook callback for the
+        # synthetic keystrokes it just injected, before SendInput even
+        # returns. That reentrant call tries to acquire the same
+        # (non-reentrant) lock and deadlocks. Decide what to call while
+        # locked, then call it after releasing.
+        callback = None
         with self._lock:
             is_modifier = vk in VK_CONTROL_CODES or vk in VK_SHIFT_CODES
             if vk in VK_CONTROL_CODES:
@@ -58,19 +66,21 @@ class HotkeyStateMachine:
                 if self._ctrl_down and self._shift_down and self._state == _IDLE:
                     self._state = _WAITING
                     self._armed_at = now + self.threshold_s
-                return
-
-            if self._state == _WAITING:
+            elif self._state == _WAITING:
                 self._state = _SUPPRESSED
             elif self._state == _ARMED:
                 self._state = _SUPPRESSED
-                self._on_cancel()
+                callback = self._on_cancel
+
+        if callback is not None:
+            callback()
 
     def key_up(self, vk: int, now: float) -> None:
-        with self._lock:
-            if vk not in VK_CONTROL_CODES and vk not in VK_SHIFT_CODES:
-                return
+        if vk not in VK_CONTROL_CODES and vk not in VK_SHIFT_CODES:
+            return
 
+        callback = None
+        with self._lock:
             was_armed = self._state == _ARMED
             was_waiting = self._state == _WAITING
             if vk in VK_CONTROL_CODES:
@@ -81,25 +91,28 @@ class HotkeyStateMachine:
             if was_armed:
                 self._state = _IDLE
                 self._armed_at = None
-                self._on_stop()
-                return
-
-            if was_waiting:
+                callback = self._on_stop
+            elif was_waiting:
                 # One of the two required keys let go before the threshold
                 # elapsed -- the "held together" window is broken, even if
                 # the other modifier is still down. Cancel the pending arm.
                 self._state = _IDLE
                 self._armed_at = None
-                return
-
-            if not self._ctrl_down and not self._shift_down:
+            elif not self._ctrl_down and not self._shift_down:
                 self._state = _IDLE
 
+        if callback is not None:
+            callback()
+
     def on_tick(self, now: float) -> None:
+        callback = None
         with self._lock:
             if self._state == _WAITING and self._armed_at is not None and now >= self._armed_at:
                 self._state = _ARMED
-                self._on_start()
+                callback = self._on_start
+
+        if callback is not None:
+            callback()
 
 
 WH_KEYBOARD_LL = 13
