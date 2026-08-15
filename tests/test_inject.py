@@ -5,7 +5,9 @@ def make_recording_send_input(counts_to_return=None):
     calls = []
 
     def fake_send_input(count, array, struct_size):
-        events = [(array[i].union.ki.wScan, array[i].union.ki.dwFlags) for i in range(count)]
+        events = [
+            (array[i].union.ki.wScan, array[i].union.ki.dwFlags) for i in range(count)
+        ]
         calls.append(events)
         if counts_to_return is not None:
             return counts_to_return.pop(0)
@@ -20,8 +22,14 @@ def test_sends_a_separate_send_input_call_per_character():
     inject("Hi", send_input_fn=fake_send_input, sleep_fn=lambda _s: None)
 
     assert calls == [
-        [(ord("H"), KEYEVENTF_UNICODE), (ord("H"), KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)],
-        [(ord("i"), KEYEVENTF_UNICODE), (ord("i"), KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)],
+        [
+            (ord("H"), KEYEVENTF_UNICODE),
+            (ord("H"), KEYEVENTF_UNICODE | KEYEVENTF_KEYUP),
+        ],
+        [
+            (ord("i"), KEYEVENTF_UNICODE),
+            (ord("i"), KEYEVENTF_UNICODE | KEYEVENTF_KEYUP),
+        ],
     ]
 
 
@@ -77,7 +85,7 @@ def test_astral_character_is_sent_as_a_utf16_surrogate_pair():
     # cannot fit in a single 16-bit wScan. It must be split into its UTF-16
     # surrogate pair (high, low), each sent as its own keystroke -- the
     # documented approach for SendInput + KEYEVENTF_UNICODE.
-    emoji = "\U0001F600"
+    emoji = "\U0001f600"
     high, low = emoji.encode("utf-16-le")[0:2], emoji.encode("utf-16-le")[2:4]
     expected_high = int.from_bytes(high, "little")
     expected_low = int.from_bytes(low, "little")
@@ -87,8 +95,14 @@ def test_astral_character_is_sent_as_a_utf16_surrogate_pair():
     inject(emoji, send_input_fn=fake_send_input, sleep_fn=lambda _s: None)
 
     assert calls == [
-        [(expected_high, KEYEVENTF_UNICODE), (expected_high, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)],
-        [(expected_low, KEYEVENTF_UNICODE), (expected_low, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)],
+        [
+            (expected_high, KEYEVENTF_UNICODE),
+            (expected_high, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP),
+        ],
+        [
+            (expected_low, KEYEVENTF_UNICODE),
+            (expected_low, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP),
+        ],
     ]
 
 
@@ -96,6 +110,6 @@ def test_astral_character_alone_still_sleeps_once_between_its_two_surrogates():
     sleeps = []
     fake_send_input, _calls = make_recording_send_input()
 
-    inject("\U0001F600", send_input_fn=fake_send_input, sleep_fn=sleeps.append)
+    inject("\U0001f600", send_input_fn=fake_send_input, sleep_fn=sleeps.append)
 
     assert len(sleeps) == 1

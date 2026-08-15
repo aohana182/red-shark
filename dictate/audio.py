@@ -5,7 +5,9 @@ from dictate import config
 
 
 class AudioRecorder:
-    def __init__(self, sample_rate: int = config.SAMPLE_RATE, stream_factory=sd.InputStream):
+    def __init__(
+        self, sample_rate: int = config.SAMPLE_RATE, stream_factory=sd.InputStream
+    ):
         self._sample_rate = sample_rate
         self._stream_factory = stream_factory
         self._frames: list[np.ndarray] = []

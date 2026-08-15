@@ -38,7 +38,13 @@ def test_console_close_triggers_shutdown():
 
 
 def test_all_tracked_ctrl_types_trigger_shutdown():
-    for ctrl_type in (_CTRL_C_EVENT, _CTRL_BREAK_EVENT, _CTRL_CLOSE_EVENT, _CTRL_LOGOFF_EVENT, _CTRL_SHUTDOWN_EVENT):
+    for ctrl_type in (
+        _CTRL_C_EVENT,
+        _CTRL_BREAK_EVENT,
+        _CTRL_CLOSE_EVENT,
+        _CTRL_LOGOFF_EVENT,
+        _CTRL_SHUTDOWN_EVENT,
+    ):
         app, stopped = make_app_with_fake_stops()
 
         handled = app.handle_console_event(ctrl_type)

@@ -23,7 +23,13 @@ _CTRL_CLOSE_EVENT = 2
 _CTRL_LOGOFF_EVENT = 5
 _CTRL_SHUTDOWN_EVENT = 6
 _SHUTDOWN_CTRL_TYPES = frozenset(
-    {_CTRL_C_EVENT, _CTRL_BREAK_EVENT, _CTRL_CLOSE_EVENT, _CTRL_LOGOFF_EVENT, _CTRL_SHUTDOWN_EVENT}
+    {
+        _CTRL_C_EVENT,
+        _CTRL_BREAK_EVENT,
+        _CTRL_CLOSE_EVENT,
+        _CTRL_LOGOFF_EVENT,
+        _CTRL_SHUTDOWN_EVENT,
+    }
 )
 
 _HandlerRoutine = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
@@ -85,7 +91,9 @@ class App:
         try:
             logger.info("dictation released: recording stopped")
             audio_data, sample_rate = self._recorder.stop_recording()
-            logger.debug("captured %d samples at %dHz", audio_data.shape[0], sample_rate)
+            logger.debug(
+                "captured %d samples at %dHz", audio_data.shape[0], sample_rate
+            )
             if audio_data.shape[0] == 0:
                 logger.warning("empty audio buffer, nothing to transcribe")
                 return
@@ -122,8 +130,12 @@ class App:
         # Keep a reference on self -- ctypes doesn't, and a GC'd callback
         # would crash the process the next time Windows tries to invoke it.
         self._console_handler = _HandlerRoutine(self.handle_console_event)
-        if not ctypes.windll.kernel32.SetConsoleCtrlHandler(self._console_handler, True):
-            logger.warning("failed to install console control handler: %s", ctypes.get_last_error())
+        if not ctypes.windll.kernel32.SetConsoleCtrlHandler(
+            self._console_handler, True
+        ):
+            logger.warning(
+                "failed to install console control handler: %s", ctypes.get_last_error()
+            )
 
     def run(self) -> None:
         logger.info("preloading whisper model...")

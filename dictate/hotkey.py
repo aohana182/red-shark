@@ -118,7 +118,11 @@ class HotkeyStateMachine:
     def on_tick(self, now: float) -> None:
         callback = None
         with self._lock:
-            if self._state == _WAITING and self._armed_at is not None and now >= self._armed_at:
+            if (
+                self._state == _WAITING
+                and self._armed_at is not None
+                and now >= self._armed_at
+            ):
                 self._state = _ARMED
                 callback = self._on_start
 
@@ -218,7 +222,9 @@ class HotkeyListener:
                 deadline = self._sm.key_down(kb.vkCode, now)
                 if deadline is not None:
                     delay = max(0.0, deadline - now)
-                    threading.Timer(delay, lambda: self._sm.on_tick(time.monotonic())).start()
+                    threading.Timer(
+                        delay, lambda: self._sm.on_tick(time.monotonic())
+                    ).start()
             elif w_param in (WM_KEYUP, WM_SYSKEYUP):
                 logger.debug("key up: vk=0x%02X", kb.vkCode)
                 self._sm.key_up(kb.vkCode, now)
@@ -231,7 +237,9 @@ class HotkeyListener:
         )
         if not self._hook_id:
             raise ctypes.WinError(ctypes.get_last_error())
-        logger.debug("hook installed, id=%s, thread=%s", self._hook_id, threading.get_ident())
+        logger.debug(
+            "hook installed, id=%s, thread=%s", self._hook_id, threading.get_ident()
+        )
 
     def stop(self) -> None:
         if self._hook_id:
