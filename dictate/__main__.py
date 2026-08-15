@@ -6,7 +6,7 @@ from ctypes import wintypes
 import pystray
 from PIL import Image, ImageDraw
 
-from dictate import audio, config, hotkey, inject, transcribe
+from dictate import audio, cleanup, config, hotkey, inject, transcribe
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,9 @@ class App:
             text = transcribe.transcribe(audio_data, sample_rate)
             logger.info("transcribed: %r", text)
             if text:
+                text = cleanup.cleanup(text)
+                logger.info("cleaned: %r", text)
+            if text:
                 inject.inject(text)
                 logger.debug("injected %d characters", len(text))
         except Exception:
@@ -115,6 +118,7 @@ class App:
     def _quit(self, icon: pystray.Icon, _item: pystray.MenuItem) -> None:
         logger.info("quit requested")
         self._listener.stop()
+        cleanup.shutdown()
         icon.stop()
 
     def handle_console_event(self, ctrl_type: int) -> bool:
@@ -123,6 +127,7 @@ class App:
             return False
         logger.info("console control event %d received, shutting down", ctrl_type)
         self._listener.stop()
+        cleanup.shutdown()
         self._icon.stop()
         return True
 
@@ -140,7 +145,11 @@ class App:
     def run(self) -> None:
         logger.info("preloading whisper model...")
         transcribe.preload()
-        logger.info("model ready")
+        logger.info("whisper model ready")
+
+        logger.info("preloading cleanup model...")
+        cleanup.preload()
+        logger.info("cleanup model ready")
 
         def hook_thread_main() -> None:
             # The hook's callbacks are only delivered to the thread that
