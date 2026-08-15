@@ -12,17 +12,17 @@ Build a background Windows utility, Ctrl+Shift hold-to-talk, that captures speec
 ## Task List
 
 ### Phase 1: Foundation — Raw Dictation Loop
-- [ ] Task 1: Project scaffolding & config
-- [ ] Task 2: Ctrl+Shift hold-to-talk keyboard hook (with hold-duration threshold + cancel-on-third-key)
-- [ ] Task 3: Audio capture on hold
-- [ ] Task 4: Whisper transcription
-- [ ] Task 5: Text injection via SendInput
-- [ ] Task 6: Wire the raw dictation loop end-to-end
+- [x] Task 1: Project scaffolding & config
+- [x] Task 2: Ctrl+Shift hold-to-talk keyboard hook (with hold-duration threshold + cancel-on-third-key)
+- [x] Task 3: Audio capture on hold
+- [x] Task 4: Whisper transcription
+- [x] Task 5: Text injection via SendInput
+- [x] Task 6: Wire the raw dictation loop end-to-end
 
 ### Checkpoint: Foundation
-- [ ] Raw dictation loop works end-to-end in Notepad, a browser text field, and VS Code
-- [ ] `Ctrl+Shift+Esc`/`+Z`/`+T`/`+S`/`+N` and similar shortcuts still work normally; dictation never arms when a third key follows
-- [ ] All Phase 1 tests pass
+- [ ] Raw dictation loop works end-to-end in Notepad, a browser text field, and VS Code -- **needs live human test**, see below
+- [ ] `Ctrl+Shift+Esc`/`+Z`/`+T`/`+S`/`+N` and similar shortcuts still work normally; dictation never arms when a third key follows -- **needs live human test**
+- [x] All Phase 1 tests pass (21 unit tests, all green; full wiring verified with real transcribe against the synthesized fixture)
 - [ ] Review with human before proceeding to the cleanup layer
 
 ### Phase 2: Cleanup Layer
