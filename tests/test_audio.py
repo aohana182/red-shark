@@ -76,6 +76,20 @@ def test_stop_recording_with_no_audio_returns_empty_buffer():
     assert sample_rate == 16000
 
 
+def test_stop_recording_without_a_started_stream_returns_empty_buffer():
+    # Guards against a real crash: if start_recording() is still in
+    # progress (or hung -- observed in practice, opening the real device
+    # can stall) when stop_recording() is called, self._stream is still
+    # None. Must return empty, not raise AttributeError.
+    factory, _created = make_factory()
+    rec = AudioRecorder(sample_rate=16000, stream_factory=factory)
+
+    audio, sample_rate = rec.stop_recording()
+
+    assert audio.shape == (0,)
+    assert sample_rate == 16000
+
+
 def test_recorder_resets_frames_between_recordings():
     factory, created = make_factory()
     rec = AudioRecorder(sample_rate=16000, stream_factory=factory)

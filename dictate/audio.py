@@ -25,6 +25,11 @@ class AudioRecorder:
         self._stream.start()
 
     def stop_recording(self) -> tuple[np.ndarray, int]:
+        if self._stream is None:
+            # start_recording() hasn't finished (or is still hung -- opening
+            # the real device can stall) -- nothing to stop or return yet.
+            return np.zeros((0,), dtype=np.float32), self._sample_rate
+
         self._stream.stop()
         self._stream.close()
         self._stream = None
