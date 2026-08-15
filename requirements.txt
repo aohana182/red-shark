@@ -5,5 +5,8 @@ pystray
 pytest
 ruff
 
-# llama-cpp-python deferred: no prebuilt wheel for this machine's Python 3.14,
-# source build needs a C++ compiler that isn't installed. Resolve before Task 7.
+# No Python LLM binding needed for cleanup: cleanup.py runs the official
+# llama-server.exe binary (fetched by scripts/download_models.py, not pip)
+# as a subprocess and talks to it over local HTTP. See dictate/config.py
+# for why -- llama-cpp-python has no Python 3.14 wheel here, and the one
+# community wheel that does crashes at model load on this CPU.
