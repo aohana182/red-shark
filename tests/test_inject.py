@@ -1,58 +1,72 @@
 from dictate.inject import KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, inject
 
 
-def test_sends_one_down_and_one_up_event_per_character():
-    captured = {}
+def make_recording_send_input(counts_to_return=None):
+    calls = []
 
     def fake_send_input(count, array, struct_size):
-        captured["count"] = count
-        captured["events"] = [
-            (array[i].union.ki.wScan, array[i].union.ki.dwFlags) for i in range(count)
-        ]
+        events = [(array[i].union.ki.wScan, array[i].union.ki.dwFlags) for i in range(count)]
+        calls.append(events)
+        if counts_to_return is not None:
+            return counts_to_return.pop(0)
         return count
 
-    inject("Hi", send_input_fn=fake_send_input)
+    return fake_send_input, calls
 
-    assert captured["count"] == 4
-    assert captured["events"] == [
-        (ord("H"), KEYEVENTF_UNICODE),
-        (ord("H"), KEYEVENTF_UNICODE | KEYEVENTF_KEYUP),
-        (ord("i"), KEYEVENTF_UNICODE),
-        (ord("i"), KEYEVENTF_UNICODE | KEYEVENTF_KEYUP),
+
+def test_sends_a_separate_send_input_call_per_character():
+    fake_send_input, calls = make_recording_send_input()
+
+    inject("Hi", send_input_fn=fake_send_input, sleep_fn=lambda _s: None)
+
+    assert calls == [
+        [(ord("H"), KEYEVENTF_UNICODE), (ord("H"), KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)],
+        [(ord("i"), KEYEVENTF_UNICODE), (ord("i"), KEYEVENTF_UNICODE | KEYEVENTF_KEYUP)],
     ]
 
 
 def test_handles_punctuation_and_capitals_via_unicode_codes_not_shift_state():
-    captured = {}
+    fake_send_input, calls = make_recording_send_input()
 
-    def fake_send_input(count, array, struct_size):
-        captured["scans"] = [array[i].union.ki.wScan for i in range(count)]
-        return count
+    inject("A!", send_input_fn=fake_send_input, sleep_fn=lambda _s: None)
 
-    inject("A!", send_input_fn=fake_send_input)
-
-    assert captured["scans"] == [ord("A"), ord("A"), ord("!"), ord("!")]
+    scans = [wscan for call in calls for wscan, _flags in call]
+    assert scans == [ord("A"), ord("A"), ord("!"), ord("!")]
 
 
 def test_empty_string_sends_nothing():
-    captured = {"called": False}
+    fake_send_input, calls = make_recording_send_input()
 
-    def fake_send_input(count, array, struct_size):
-        captured["called"] = True
-        return count
+    inject("", send_input_fn=fake_send_input, sleep_fn=lambda _s: None)
 
-    inject("", send_input_fn=fake_send_input)
-
-    assert captured["called"] is False
+    assert calls == []
 
 
 def test_raises_when_fewer_events_are_sent_than_requested():
-    def fake_send_input(count, array, struct_size):
-        return count - 1
+    fake_send_input, _calls = make_recording_send_input(counts_to_return=[1])
 
     try:
-        inject("Hi", send_input_fn=fake_send_input)
+        inject("Hi", send_input_fn=fake_send_input, sleep_fn=lambda _s: None)
     except OSError:
         pass
     else:
         raise AssertionError("expected OSError (ctypes.WinError) to be raised")
+
+
+def test_sleeps_between_characters_but_not_after_the_last():
+    fake_send_input, _calls = make_recording_send_input()
+    sleeps = []
+
+    inject("abc", send_input_fn=fake_send_input, sleep_fn=sleeps.append)
+
+    assert len(sleeps) == 2
+    assert all(s > 0 for s in sleeps)
+
+
+def test_does_not_sleep_for_a_single_character():
+    fake_send_input, _calls = make_recording_send_input()
+    sleeps = []
+
+    inject("a", send_input_fn=fake_send_input, sleep_fn=sleeps.append)
+
+    assert sleeps == []

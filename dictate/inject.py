@@ -1,5 +1,8 @@
 import ctypes
+import time
 from ctypes import wintypes
+
+from dictate import config
 
 _user32 = ctypes.WinDLL("user32", use_last_error=True)
 
@@ -65,25 +68,33 @@ def _char_event(char: str, flags: int) -> _INPUT:
     return _INPUT(type=INPUT_KEYBOARD, union=_INPUT_UNION(ki=ki))
 
 
-def inject(text: str, send_input_fn=None) -> None:
+def inject(text: str, send_input_fn=None, sleep_fn=time.sleep) -> None:
     """Types `text` into whatever window currently has focus.
 
     Uses KEYEVENTF_UNICODE so every character -- including punctuation and
     capitals -- is injected by Unicode code point, without needing to
     compute virtual-key codes or simulate Shift state.
+
+    Sends one character at a time with a small delay between them, rather
+    than the whole string as one SendInput burst -- confirmed by real-world
+    testing that some apps silently drop or garble characters when a long
+    string arrives as a single zero-delay burst.
     """
     if not text:
         return
 
     send_input_fn = send_input_fn or _user32.SendInput
+    delay_s = config.INJECT_CHAR_DELAY_MS / 1000
 
-    events = []
-    for char in text:
-        events.append(_char_event(char, KEYEVENTF_UNICODE))
-        events.append(_char_event(char, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP))
+    for i, char in enumerate(text):
+        events = (
+            _char_event(char, KEYEVENTF_UNICODE),
+            _char_event(char, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP),
+        )
+        array = (_INPUT * 2)(*events)
+        sent = send_input_fn(2, array, ctypes.sizeof(_INPUT))
+        if sent != 2:
+            raise ctypes.WinError(ctypes.get_last_error())
 
-    count = len(events)
-    array = (_INPUT * count)(*events)
-    sent = send_input_fn(count, array, ctypes.sizeof(_INPUT))
-    if sent != count:
-        raise ctypes.WinError(ctypes.get_last_error())
+        if i < len(text) - 1:
+            sleep_fn(delay_s)
