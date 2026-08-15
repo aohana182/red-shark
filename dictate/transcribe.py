@@ -17,6 +17,11 @@ def _get_model() -> WhisperModel:
     return _model
 
 
+def preload() -> None:
+    """Loads the model eagerly so the first real hold isn't slower than the rest."""
+    _get_model()
+
+
 def transcribe(audio: np.ndarray, sample_rate: int) -> str:
     assert sample_rate == config.SAMPLE_RATE, (
         f"expected {config.SAMPLE_RATE}Hz audio, got {sample_rate}Hz"
