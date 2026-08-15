@@ -29,20 +29,21 @@ See `tasks/plan.md` for architecture decisions, risks, and phase checkpoints.
 
 ---
 
-## Task 2: Shift+Z hold-to-talk keyboard hook
+## Task 2: Ctrl+Shift hold-to-talk keyboard hook
 
-**Description:** Implement `hotkey.py` using `WH_KEYBOARD_LL` via `ctypes`. Track Shift and Z down/up state. Only treat a hold past the configured threshold (~250ms) as dictation-start (fires `on_start`, swallows further Z events); releasing either key before the threshold lets the keystroke pass through normally (types a literal capital "Z"). Releasing after dictation has started fires `on_stop` and swallows the release too.
+**Description:** Implement `hotkey.py` using `WH_KEYBOARD_LL` via `ctypes`. Track Ctrl and Shift down/up state. Only treat a hold past the configured threshold (~250ms) as dictation-start (fires `on_start`) — if a third key is pressed while both modifiers are held, at any point before or after arming, immediately cancel/abort (fire `on_cancel` if already armed) and let all keys pass through untouched, so shortcuts like `Ctrl+Shift+Esc` keep working. Releasing either modifier after `on_start` (with no third key involved) fires `on_stop`.
 
 **Acceptance criteria:**
-- [ ] Holding Shift+Z past the threshold triggers `on_start` exactly once per hold
-- [ ] Releasing either key after `on_start` triggers `on_stop` exactly once
-- [ ] A quick Shift+Z tap (under threshold) still types a literal "Z", not swallowed
-- [ ] No "Z" character ever reaches the focused app during an armed dictation hold
+- [ ] Holding Ctrl+Shift alone past the threshold triggers `on_start` exactly once per hold
+- [ ] Releasing either modifier after `on_start` triggers `on_stop` exactly once
+- [ ] Pressing a third key while Ctrl+Shift are held (before or after the threshold) cancels/aborts and lets the full combo (e.g. `Ctrl+Shift+Esc`) pass through normally — dictation never starts
+- [ ] Quick Ctrl+Shift taps (under threshold, no third key) do nothing observable — no character is typed since neither modifier is printable on its own
 
 **Verification:**
-- [ ] `pytest` unit test simulating key event callbacks against the press/hold/release/threshold state machine (mocked event dispatch, not real OS input)
-- [ ] Manual test: open Notepad, hold Shift+Z past threshold, confirm no "Z" typed and start/stop logged
-- [ ] Manual test: open Notepad, quick-tap Shift+Z, confirm a literal "Z" is typed
+- [ ] `pytest` unit test simulating key event callbacks against the press/hold/release/threshold/cancel state machine (mocked event dispatch, not real OS input)
+- [ ] Manual test: open Notepad, hold Ctrl+Shift past threshold, confirm start/stop logged and nothing typed
+- [ ] Manual test: press `Ctrl+Shift+Esc` while the app is running, confirm Task Manager opens and dictation does not arm
+- [ ] Manual test: press `Ctrl+Shift+Z`, `Ctrl+Shift+T`, `Ctrl+Shift+S` in relevant apps, confirm normal behavior (redo, reopen tab, snip) and no dictation interference
 
 **Dependencies:** Task 1
 
@@ -124,7 +125,7 @@ See `tasks/plan.md` for architecture decisions, risks, and phase checkpoints.
 **Description:** `__main__.py` connects hotkey start/stop callbacks → audio capture → transcribe → inject directly (no cleanup yet), plus a bare `pystray` tray icon with a "Quit" option.
 
 **Acceptance criteria:**
-- [ ] Holding Shift+Z past threshold, speaking, releasing results in raw (uncleaned) transcription typed into the focused app
+- [ ] Holding Ctrl+Shift past threshold, speaking, releasing results in raw (uncleaned) transcription typed into the focused app
 - [ ] App runs in the system tray and can be quit from there
 
 **Verification:**
@@ -141,7 +142,7 @@ See `tasks/plan.md` for architecture decisions, risks, and phase checkpoints.
 
 ## Checkpoint: After Tasks 1–6 (Foundation)
 - [ ] Raw dictation loop works end-to-end in Notepad, a browser text field, and VS Code
-- [ ] No stray "Z" typed on any armed hold; quick taps still type a literal "Z"
+- [ ] `Ctrl+Shift+Esc`/`+Z`/`+T`/`+S`/`+N` and similar shortcuts still work normally; dictation never arms when a third key follows
 - [ ] All Phase 1 tests pass
 - [ ] Review with human before proceeding to Phase 2
 
