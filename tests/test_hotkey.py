@@ -33,6 +33,24 @@ def make_sm(rec: Recorder) -> HotkeyStateMachine:
     return HotkeyStateMachine(THRESHOLD_S, rec.on_start, rec.on_stop, rec.on_cancel)
 
 
+def test_key_down_returns_deadline_only_on_entering_waiting_not_on_repeats():
+    # Windows fires repeated keydowns for a held key (~30/sec in real use).
+    # The caller schedules an OS timer per non-None return value, so this
+    # must fire only on the actual WAITING transition -- not on every one
+    # of dozens of repeat events during a single hold, which would spawn a
+    # new thread every ~30ms for as long as the key is held.
+    rec = Recorder()
+    sm = make_sm(rec)
+
+    first = sm.key_down(VK_LCONTROL, now=0.0)
+    second = sm.key_down(VK_LSHIFT, now=0.0)  # completes the pair -> WAITING
+    repeats = [sm.key_down(VK_LSHIFT, now=t) for t in (0.03, 0.06, 0.09, 0.12)]
+
+    assert first is None
+    assert second == THRESHOLD_S
+    assert repeats == [None, None, None, None]
+
+
 def test_arms_after_threshold_when_ctrl_shift_held_alone():
     rec = Recorder()
     sm = make_sm(rec)

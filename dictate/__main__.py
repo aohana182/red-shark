@@ -65,26 +65,44 @@ class App:
             menu=pystray.Menu(pystray.MenuItem("Quit", self._quit)),
         )
 
+    # _on_start/_on_stop/_on_cancel run synchronously inside the global
+    # keyboard hook's callback (see hotkey.py). An exception escaping a
+    # ctypes callback doesn't raise normally -- it gets swallowed by ctypes
+    # with a bare stderr warning, bypassing our logging, and can leave the
+    # hook's return value to Windows undefined. Since this pipeline touches
+    # several things that can fail transiently (mic device, model
+    # inference, SendInput), every entry point is defensive: log properly,
+    # never let an exception reach the hook boundary.
+
     def _on_start(self) -> None:
-        logger.info("dictation armed: recording started")
-        self._recorder.start_recording()
+        try:
+            logger.info("dictation armed: recording started")
+            self._recorder.start_recording()
+        except Exception:
+            logger.exception("failed to start recording")
 
     def _on_stop(self) -> None:
-        logger.info("dictation released: recording stopped")
-        audio_data, sample_rate = self._recorder.stop_recording()
-        logger.debug("captured %d samples at %dHz", audio_data.shape[0], sample_rate)
-        if audio_data.shape[0] == 0:
-            logger.warning("empty audio buffer, nothing to transcribe")
-            return
-        text = transcribe.transcribe(audio_data, sample_rate)
-        logger.info("transcribed: %r", text)
-        if text:
-            inject.inject(text)
-            logger.debug("injected %d characters", len(text))
+        try:
+            logger.info("dictation released: recording stopped")
+            audio_data, sample_rate = self._recorder.stop_recording()
+            logger.debug("captured %d samples at %dHz", audio_data.shape[0], sample_rate)
+            if audio_data.shape[0] == 0:
+                logger.warning("empty audio buffer, nothing to transcribe")
+                return
+            text = transcribe.transcribe(audio_data, sample_rate)
+            logger.info("transcribed: %r", text)
+            if text:
+                inject.inject(text)
+                logger.debug("injected %d characters", len(text))
+        except Exception:
+            logger.exception("dictation pipeline failed")
 
     def _on_cancel(self) -> None:
-        logger.info("dictation cancelled (third key pressed)")
-        self._recorder.stop_recording()
+        try:
+            logger.info("dictation cancelled (third key pressed)")
+            self._recorder.stop_recording()
+        except Exception:
+            logger.exception("failed to stop recording on cancel")
 
     def _quit(self, icon: pystray.Icon, _item: pystray.MenuItem) -> None:
         logger.info("quit requested")

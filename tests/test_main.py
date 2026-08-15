@@ -1,3 +1,6 @@
+import numpy as np
+
+import dictate.transcribe as transcribe_module
 from dictate.__main__ import (
     _CTRL_BREAK_EVENT,
     _CTRL_C_EVENT,
@@ -51,3 +54,47 @@ def test_unrecognized_ctrl_type_is_ignored():
 
     assert handled is False
     assert stopped == {"listener": False, "icon": False}
+
+
+# _on_start/_on_stop/_on_cancel run synchronously inside the global keyboard
+# hook's callback. An exception escaping there doesn't propagate normally --
+# ctypes swallows it with a bare stderr warning, bypassing logging, and can
+# leave the hook's return value to Windows undefined. Every entry point must
+# catch and log instead of letting anything through.
+
+
+def test_on_start_does_not_raise_when_recording_fails():
+    app = App()
+    app._recorder.start_recording = _raise
+
+    app._on_start()  # must not raise
+
+
+def test_on_stop_does_not_raise_when_recording_fails():
+    app = App()
+    app._recorder.stop_recording = _raise
+
+    app._on_stop()  # must not raise
+
+
+def test_on_stop_does_not_raise_when_transcription_fails():
+    app = App()
+    app._recorder.stop_recording = lambda: (np.ones((100,), dtype=np.float32), 16000)
+
+    original = transcribe_module.transcribe
+    transcribe_module.transcribe = _raise
+    try:
+        app._on_stop()  # must not raise
+    finally:
+        transcribe_module.transcribe = original
+
+
+def test_on_cancel_does_not_raise_when_recording_fails():
+    app = App()
+    app._recorder.stop_recording = _raise
+
+    app._on_cancel()  # must not raise
+
+
+def _raise(*_args, **_kwargs):
+    raise RuntimeError("simulated failure")

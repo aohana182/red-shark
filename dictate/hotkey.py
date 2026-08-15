@@ -46,7 +46,7 @@ class HotkeyStateMachine:
         self._shift_down = False
         self._armed_at: float | None = None
 
-    def key_down(self, vk: int, now: float) -> None:
+    def key_down(self, vk: int, now: float) -> float | None:
         # Callbacks must never run while holding _lock: on_stop() calls
         # inject(), which calls SendInput(), which -- because our hook is
         # global -- re-enters this same thread's hook callback for the
@@ -54,7 +54,16 @@ class HotkeyStateMachine:
         # returns. That reentrant call tries to acquire the same
         # (non-reentrant) lock and deadlocks. Decide what to call while
         # locked, then call it after releasing.
+        #
+        # Returns the deadline (monotonic time) to check on_tick, but only
+        # when a new wait period was just entered -- not on every keydown.
+        # Windows fires repeated keydowns for a held key (confirmed in real
+        # use: ~30 events/sec while a modifier is held), and the caller
+        # schedules a real OS timer per deadline returned here; scheduling
+        # one per repeat event would spawn a new thread every ~30ms for as
+        # long as a key is held, for no benefit.
         callback = None
+        deadline = None
         with self._lock:
             is_modifier = vk in VK_CONTROL_CODES or vk in VK_SHIFT_CODES
             if vk in VK_CONTROL_CODES:
@@ -66,6 +75,7 @@ class HotkeyStateMachine:
                 if self._ctrl_down and self._shift_down and self._state == _IDLE:
                     self._state = _WAITING
                     self._armed_at = now + self.threshold_s
+                    deadline = self._armed_at
             elif self._state == _WAITING:
                 self._state = _SUPPRESSED
             elif self._state == _ARMED:
@@ -74,6 +84,7 @@ class HotkeyStateMachine:
 
         if callback is not None:
             callback()
+        return deadline
 
     def key_up(self, vk: int, now: float) -> None:
         if vk not in VK_CONTROL_CODES and vk not in VK_SHIFT_CODES:
@@ -164,7 +175,11 @@ class _KBDLLHOOKSTRUCT(ctypes.Structure):
         ("scanCode", wintypes.DWORD),
         ("flags", wintypes.DWORD),
         ("time", wintypes.DWORD),
-        ("dwExtraInfo", ctypes.POINTER(wintypes.ULONG)),
+        # ULONG_PTR per MSDN (a pointer-sized integer), not an actual
+        # pointer -- happens to have the same size/alignment either way, so
+        # this was a dormant mistype with no observable bug since the field
+        # is never read here, but the correct type is an integer.
+        ("dwExtraInfo", wintypes.WPARAM),
     ]
 
 
@@ -200,11 +215,10 @@ class HotkeyListener:
             now = time.monotonic()
             if w_param in (WM_KEYDOWN, WM_SYSKEYDOWN):
                 logger.debug("key down: vk=0x%02X", kb.vkCode)
-                self._sm.key_down(kb.vkCode, now)
-                threading.Timer(
-                    self._sm.threshold_s,
-                    lambda: self._sm.on_tick(time.monotonic()),
-                ).start()
+                deadline = self._sm.key_down(kb.vkCode, now)
+                if deadline is not None:
+                    delay = max(0.0, deadline - now)
+                    threading.Timer(delay, lambda: self._sm.on_tick(time.monotonic())).start()
             elif w_param in (WM_KEYUP, WM_SYSKEYUP):
                 logger.debug("key up: vk=0x%02X", kb.vkCode)
                 self._sm.key_up(kb.vkCode, now)

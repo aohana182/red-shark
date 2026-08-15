@@ -23,9 +23,10 @@ def preload() -> None:
 
 
 def transcribe(audio: np.ndarray, sample_rate: int) -> str:
-    assert sample_rate == config.SAMPLE_RATE, (
-        f"expected {config.SAMPLE_RATE}Hz audio, got {sample_rate}Hz"
-    )
+    if sample_rate != config.SAMPLE_RATE:
+        # A real (if unlikely) check, not an invariant -- must not be a bare
+        # `assert`, which silently disappears under `python -O`.
+        raise ValueError(f"expected {config.SAMPLE_RATE}Hz audio, got {sample_rate}Hz")
     model = _get_model()
     segments, _ = model.transcribe(audio, language="en")
     return " ".join(segment.text.strip() for segment in segments)
