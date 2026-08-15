@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import ctypes
+import logging
 import threading
 import time
 from collections.abc import Callable
 from ctypes import wintypes
 
 from dictate import config
+
+logger = logging.getLogger(__name__)
 
 VK_CONTROL_CODES = {0x11, 0xA2, 0xA3}  # VK_CONTROL, VK_LCONTROL, VK_RCONTROL
 VK_SHIFT_CODES = {0x10, 0xA0, 0xA1}  # VK_SHIFT, VK_LSHIFT, VK_RSHIFT
@@ -183,12 +186,14 @@ class HotkeyListener:
             kb = ctypes.cast(l_param, ctypes.POINTER(_KBDLLHOOKSTRUCT)).contents
             now = time.monotonic()
             if w_param in (WM_KEYDOWN, WM_SYSKEYDOWN):
+                logger.debug("key down: vk=0x%02X", kb.vkCode)
                 self._sm.key_down(kb.vkCode, now)
                 threading.Timer(
                     self._sm.threshold_s,
                     lambda: self._sm.on_tick(time.monotonic()),
                 ).start()
             elif w_param in (WM_KEYUP, WM_SYSKEYUP):
+                logger.debug("key up: vk=0x%02X", kb.vkCode)
                 self._sm.key_up(kb.vkCode, now)
         return _user32.CallNextHookEx(None, n_code, w_param, l_param)
 
@@ -199,11 +204,13 @@ class HotkeyListener:
         )
         if not self._hook_id:
             raise ctypes.WinError(ctypes.get_last_error())
+        logger.debug("hook installed, id=%s, thread=%s", self._hook_id, threading.get_ident())
 
     def stop(self) -> None:
         if self._hook_id:
             _user32.UnhookWindowsHookEx(self._hook_id)
             self._hook_id = None
+            logger.debug("hook removed")
 
     def pump_messages(self) -> None:
         """Blocks, pumping the Windows message queue this hook needs to fire.
