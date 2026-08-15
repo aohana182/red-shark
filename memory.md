@@ -42,7 +42,8 @@ Session reasoning, decisions, and open questions not fully captured in commit me
 - **Phase 3 (Packaging & Daily-Use Polish) has not been started**: tray icon pause/resume controls, a proper PyInstaller build (currently only runs from the dev venv), optional run-on-login. Given the "launch on demand, not always-running" clarification, run-on-login is probably *not* wanted — worth confirming before doing that task.
 - **PRD Success Criteria checklist** (`PRD.md`) has not been formally walked through and checked off end-to-end by the user.
 - Model download step (`scripts/download_models.py`) has only been tested by this session's own runs (which happened to already have most things cached/present) — a genuinely clean-machine run (nothing downloaded yet) has not been tested start to finish.
-- `bin/llamacpp/` and `models/` are gitignored (large binaries/weights) — a fresh clone needs `pip install -r requirements.txt` **and** `python scripts/download_models.py` before first run. This isn't currently written down anywhere user-facing (no README yet).
+- `bin/llamacpp/` and `models/` are gitignored (large binaries/weights) — a fresh clone needs `pip install -r requirements.txt` **and** `python scripts/download_models.py` before first run. Now documented in `README.md`.
+- **`README.md` needs review next session.** Written by an agent without a live human test of its own instructions (venv setup, `download_models.py` on a genuinely clean machine, the exact commands as written) — confirm it's actually accurate before trusting it, per the note at the bottom of the file itself.
 
 ## How to Run
 
