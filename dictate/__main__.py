@@ -1,5 +1,7 @@
+import ctypes
 import logging
 import threading
+from ctypes import wintypes
 
 import pystray
 from PIL import Image, ImageDraw
@@ -7,6 +9,24 @@ from PIL import Image, ImageDraw
 from dictate import audio, config, hotkey, inject, transcribe
 
 logger = logging.getLogger(__name__)
+
+# Console control events this app treats as "shut down cleanly": Ctrl+C,
+# Ctrl+Break, the console window's X button, logoff, shutdown. Handled via
+# SetConsoleCtrlHandler rather than Python's signal module because the main
+# thread spends nearly all its time blocked inside pystray's native
+# GetMessage loop -- a plain SIGINT handler can be delayed indefinitely until
+# that call happens to return, whereas SetConsoleCtrlHandler's callback runs
+# on its own OS thread regardless of what the main thread is doing.
+_CTRL_C_EVENT = 0
+_CTRL_BREAK_EVENT = 1
+_CTRL_CLOSE_EVENT = 2
+_CTRL_LOGOFF_EVENT = 5
+_CTRL_SHUTDOWN_EVENT = 6
+_SHUTDOWN_CTRL_TYPES = frozenset(
+    {_CTRL_C_EVENT, _CTRL_BREAK_EVENT, _CTRL_CLOSE_EVENT, _CTRL_LOGOFF_EVENT, _CTRL_SHUTDOWN_EVENT}
+)
+
+_HandlerRoutine = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
 
 
 def _setup_logging() -> None:
@@ -71,6 +91,22 @@ class App:
         self._listener.stop()
         icon.stop()
 
+    def handle_console_event(self, ctrl_type: int) -> bool:
+        """Returns True if `ctrl_type` was handled (shutdown initiated)."""
+        if ctrl_type not in _SHUTDOWN_CTRL_TYPES:
+            return False
+        logger.info("console control event %d received, shutting down", ctrl_type)
+        self._listener.stop()
+        self._icon.stop()
+        return True
+
+    def _install_console_handler(self) -> None:
+        # Keep a reference on self -- ctypes doesn't, and a GC'd callback
+        # would crash the process the next time Windows tries to invoke it.
+        self._console_handler = _HandlerRoutine(self.handle_console_event)
+        if not ctypes.windll.kernel32.SetConsoleCtrlHandler(self._console_handler, True):
+            logger.warning("failed to install console control handler: %s", ctypes.get_last_error())
+
     def run(self) -> None:
         logger.info("preloading whisper model...")
         transcribe.preload()
@@ -86,6 +122,7 @@ class App:
             self._listener.pump_messages()
 
         threading.Thread(target=hook_thread_main, daemon=True).start()
+        self._install_console_handler()
         logger.info("tray icon starting")
         self._icon.run()
 
