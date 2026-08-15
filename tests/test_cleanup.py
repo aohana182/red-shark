@@ -65,7 +65,10 @@ def test_sends_raw_text_as_user_message_not_merged_into_system_prompt():
     cleanup("some raw transcription", post_fn=fake)
 
     payload = json.loads(fake.last_call)
-    assert payload["messages"][-1] == {"role": "user", "content": "some raw transcription"}
+    assert payload["messages"][-1] == {
+        "role": "user",
+        "content": "some raw transcription",
+    }
 
 
 def test_system_prompt_instructs_the_model_to_treat_input_as_data_not_instructions():
@@ -81,7 +84,8 @@ def test_system_prompt_instructs_the_model_to_treat_input_as_data_not_instructio
 
 
 class FakeProcess:
-    def __init__(self):
+    def __init__(self, pid=12345):
+        self.pid = pid
         self.terminated = False
         self.waited = False
         self._poll_result = None
@@ -97,6 +101,10 @@ class FakeProcess:
         self.waited = True
 
 
+def _NOOP_ASSIGN_JOB(pid):
+    pass
+
+
 def test_preload_starts_the_server_with_correct_arguments():
     captured = {}
 
@@ -104,12 +112,29 @@ def test_preload_starts_the_server_with_correct_arguments():
         captured["args"] = args
         return FakeProcess()
 
-    cleanup_module.preload(popen_fn=fake_popen, ready_check=lambda: True)
+    cleanup_module.preload(
+        popen_fn=fake_popen, ready_check=lambda: True, assign_job_fn=_NOOP_ASSIGN_JOB
+    )
 
     args = captured["args"]
     assert str(cleanup_module.config.LLAMACPP_SERVER_EXE) in args
     assert str(cleanup_module.config.CLEANUP_MODEL_PATH) in args
     assert str(cleanup_module.config.CLEANUP_SERVER_PORT) in args
+
+
+def test_preload_assigns_the_new_process_to_the_kill_on_close_job():
+    captured = {}
+
+    def fake_assign_job(pid):
+        captured["pid"] = pid
+
+    cleanup_module.preload(
+        popen_fn=lambda *a, **k: FakeProcess(pid=99999),
+        ready_check=lambda: True,
+        assign_job_fn=fake_assign_job,
+    )
+
+    assert captured["pid"] == 99999
 
 
 def test_preload_waits_until_ready_check_succeeds():
@@ -119,7 +144,11 @@ def test_preload_waits_until_ready_check_succeeds():
         calls["count"] += 1
         return calls["count"] >= 3
 
-    cleanup_module.preload(popen_fn=lambda *a, **k: FakeProcess(), ready_check=ready_check)
+    cleanup_module.preload(
+        popen_fn=lambda *a, **k: FakeProcess(),
+        ready_check=ready_check,
+        assign_job_fn=_NOOP_ASSIGN_JOB,
+    )
 
     assert calls["count"] == 3
 
@@ -129,6 +158,7 @@ def test_preload_raises_if_server_never_becomes_ready():
         cleanup_module.preload(
             popen_fn=lambda *a, **k: FakeProcess(),
             ready_check=lambda: False,
+            assign_job_fn=_NOOP_ASSIGN_JOB,
             timeout_s=0.3,
         )
 
@@ -140,15 +170,23 @@ def test_preload_is_idempotent_when_already_running():
         call_count["n"] += 1
         return FakeProcess()
 
-    cleanup_module.preload(popen_fn=fake_popen, ready_check=lambda: True)
-    cleanup_module.preload(popen_fn=fake_popen, ready_check=lambda: True)
+    cleanup_module.preload(
+        popen_fn=fake_popen, ready_check=lambda: True, assign_job_fn=_NOOP_ASSIGN_JOB
+    )
+    cleanup_module.preload(
+        popen_fn=fake_popen, ready_check=lambda: True, assign_job_fn=_NOOP_ASSIGN_JOB
+    )
 
     assert call_count["n"] == 1
 
 
 def test_shutdown_terminates_a_running_process():
     fake_process = FakeProcess()
-    cleanup_module.preload(popen_fn=lambda *a, **k: fake_process, ready_check=lambda: True)
+    cleanup_module.preload(
+        popen_fn=lambda *a, **k: fake_process,
+        ready_check=lambda: True,
+        assign_job_fn=_NOOP_ASSIGN_JOB,
+    )
 
     cleanup_module.shutdown()
 
@@ -166,8 +204,52 @@ def test_shutdown_kills_process_if_terminate_does_not_stop_it_in_time():
         subprocess.TimeoutExpired(cmd="x", timeout=5)
     )
     fake_process.kill = lambda: setattr(fake_process, "killed", True)
-    cleanup_module.preload(popen_fn=lambda *a, **k: fake_process, ready_check=lambda: True)
+    cleanup_module.preload(
+        popen_fn=lambda *a, **k: fake_process,
+        ready_check=lambda: True,
+        assign_job_fn=_NOOP_ASSIGN_JOB,
+    )
 
     cleanup_module.shutdown()
 
     assert fake_process.killed
+
+
+def test_kill_on_close_job_actually_terminates_child_when_job_handle_closes():
+    # Real integration test, not mocked: spawn a genuinely long-running
+    # process, assign it to a fresh kill-on-close job, then close that job's
+    # handle directly (simulating what Windows does automatically when this
+    # parent process exits or is force-killed) and confirm the child is
+    # actually terminated as a result -- proving the mechanism really works,
+    # not just that the ctypes calls don't raise.
+    import ctypes
+    import time as time_module
+
+    child = subprocess.Popen(
+        ["ping", "-t", "127.0.0.1"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    try:
+        job_handle = cleanup_module._create_kill_on_close_job()
+        process_handle = cleanup_module._kernel32.OpenProcess(
+            cleanup_module._PROCESS_SET_QUOTA | cleanup_module._PROCESS_TERMINATE,
+            False,
+            child.pid,
+        )
+        assert cleanup_module._kernel32.AssignProcessToJobObject(
+            job_handle, process_handle
+        )
+
+        assert child.poll() is None  # still running
+
+        ctypes.windll.kernel32.CloseHandle(job_handle)
+        time_module.sleep(0.5)
+
+        assert child.poll() is not None, (
+            "child should have been killed when the job closed"
+        )
+    finally:
+        if child.poll() is None:
+            child.kill()

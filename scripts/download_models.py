@@ -9,7 +9,9 @@ from dictate import config
 
 
 def download_cleanup_model() -> None:
-    print(f"Downloading {config.CLEANUP_MODEL_FILENAME} from {config.CLEANUP_MODEL_REPO}...")
+    print(
+        f"Downloading {config.CLEANUP_MODEL_FILENAME} from {config.CLEANUP_MODEL_REPO}..."
+    )
     path = hf_hub_download(
         repo_id=config.CLEANUP_MODEL_REPO,
         filename=config.CLEANUP_MODEL_FILENAME,
@@ -24,12 +26,18 @@ def download_llamacpp_binaries() -> None:
         return
 
     print(f"Looking up latest release for {config.LLAMACPP_RELEASE_REPO}...")
-    api_url = f"https://api.github.com/repos/{config.LLAMACPP_RELEASE_REPO}/releases/latest"
+    api_url = (
+        f"https://api.github.com/repos/{config.LLAMACPP_RELEASE_REPO}/releases/latest"
+    )
     with urllib.request.urlopen(api_url) as resp:
         release = json.loads(resp.read())
 
     asset = next(
-        (a for a in release["assets"] if a["name"].endswith(config.LLAMACPP_ASSET_PATTERN)),
+        (
+            a
+            for a in release["assets"]
+            if a["name"].endswith(config.LLAMACPP_ASSET_PATTERN)
+        ),
         None,
     )
     if asset is None:
@@ -53,7 +61,9 @@ def download_llamacpp_binaries() -> None:
 def main() -> None:
     download_cleanup_model()
     download_llamacpp_binaries()
-    print("(faster-whisper's model downloads automatically on first use -- nothing to do there.)")
+    print(
+        "(faster-whisper's model downloads automatically on first use -- nothing to do there.)"
+    )
 
 
 if __name__ == "__main__":
