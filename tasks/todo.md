@@ -212,11 +212,11 @@ See `tasks/plan.md` for architecture decisions, risks, and phase checkpoints.
 ---
 
 ## Checkpoint: After Tasks 7–9 (Cleanup)
-- [ ] Full pipeline (hotkey → audio → transcribe → cleanup → inject) works end-to-end
-- [ ] End-to-end latency measured and recorded; under ~3s target
-- [ ] Cleanup removes filler words without altering meaning, verified across several manual test sentences
-- [ ] All PRD Success Criteria checked off
-- [ ] Review with human before proceeding to Phase 3
+- [x] Full pipeline (hotkey → audio → transcribe → cleanup → inject) works end-to-end — verified via real synthetic-input tests; see `memory.md`
+- [x] End-to-end latency measured and recorded; under ~3s target — transcribe+cleanup+inject ~1.1s, preload ~2-2.4s (one-time, at startup)
+- [x] Cleanup removes filler words without altering meaning — reliable for um/uh, conservative on ambiguous fillers, no hallucination; see `memory.md` for the model/backend pivots that got here
+- [ ] All PRD Success Criteria checked off — **pending user's live voice test**, see `memory.md` Outstanding section
+- [ ] Review with human before proceeding to Phase 3 — **pending**
 
 ## Phase 3: Packaging & Daily-Use Polish
 
