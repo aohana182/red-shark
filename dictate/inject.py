@@ -63,9 +63,22 @@ _user32.SendInput.restype = wintypes.UINT
 _user32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(_INPUT), ctypes.c_int]
 
 
-def _char_event(char: str, flags: int) -> _INPUT:
-    ki = _KEYBDINPUT(wVk=0, wScan=ord(char), dwFlags=flags, time=0, dwExtraInfo=0)
+def _unit_event(code_unit: int, flags: int) -> _INPUT:
+    ki = _KEYBDINPUT(wVk=0, wScan=code_unit, dwFlags=flags, time=0, dwExtraInfo=0)
     return _INPUT(type=INPUT_KEYBOARD, union=_INPUT_UNION(ki=ki))
+
+
+def _utf16_code_units(text: str) -> list[int]:
+    """Splits `text` into UTF-16 code units.
+
+    wScan is a 16-bit field, so characters outside the Basic Multilingual
+    Plane (e.g. emoji) can't fit as a single code point -- they must be sent
+    as their UTF-16 surrogate pair, one keystroke per code unit. Encoding to
+    UTF-16LE and reading it back as 16-bit units produces exactly that split
+    for every character, BMP or not.
+    """
+    raw = text.encode("utf-16-le")
+    return [raw[i] | (raw[i + 1] << 8) for i in range(0, len(raw), 2)]
 
 
 def inject(text: str, send_input_fn=None, sleep_fn=time.sleep) -> None:
@@ -75,26 +88,27 @@ def inject(text: str, send_input_fn=None, sleep_fn=time.sleep) -> None:
     capitals -- is injected by Unicode code point, without needing to
     compute virtual-key codes or simulate Shift state.
 
-    Sends one character at a time with a small delay between them, rather
-    than the whole string as one SendInput burst -- confirmed by real-world
-    testing that some apps silently drop or garble characters when a long
-    string arrives as a single zero-delay burst.
+    Sends one UTF-16 code unit at a time with a small delay between them,
+    rather than the whole string as one SendInput burst -- confirmed by
+    real-world testing that some apps silently drop or garble characters
+    when a long string arrives as a single zero-delay burst.
     """
     if not text:
         return
 
     send_input_fn = send_input_fn or _user32.SendInput
     delay_s = config.INJECT_CHAR_DELAY_MS / 1000
+    units = _utf16_code_units(text)
 
-    for i, char in enumerate(text):
+    for i, unit in enumerate(units):
         events = (
-            _char_event(char, KEYEVENTF_UNICODE),
-            _char_event(char, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP),
+            _unit_event(unit, KEYEVENTF_UNICODE),
+            _unit_event(unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP),
         )
         array = (_INPUT * 2)(*events)
         sent = send_input_fn(2, array, ctypes.sizeof(_INPUT))
         if sent != 2:
             raise ctypes.WinError(ctypes.get_last_error())
 
-        if i < len(text) - 1:
+        if i < len(units) - 1:
             sleep_fn(delay_s)
