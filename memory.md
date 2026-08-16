@@ -54,7 +54,9 @@ Session reasoning, decisions, and open questions not fully captured in commit me
 
 **Regression tests added** (commit `7ae26b6`): `tests/test_cleanup_quality.py`, 3 real-model integration tests (skipped if the model/binary aren't downloaded). Followed the Prove-It pattern properly — reproduced the bug first using the *actual* whisper transcript captured in `dictate.log`, confirmed 2 of 3 tests failed against the pre-fix prompt (temporarily restored via `git checkout`, then reverted), then confirmed all 3 pass against the fix. Suite is now 54 tests total.
 
-**Still true**: **PRD Success Criteria checklist** (`PRD.md`) has not been formally walked through end-to-end by the user. **`README.md`** has now had a light human-guided review (Quit section corrected) but the setup steps (venv, `download_models.py` on a genuinely clean machine) still haven't been tested from a truly clean checkout.
+**Still true**: setup steps (venv, `download_models.py` on a genuinely clean machine) still haven't been tested from a truly clean checkout.
+
+**Update, same session**: PRD Success Criteria checklist walked and updated in `PRD.md` — 5 of 7 confirmed, 2 partial (browser/VS Code untested; offline verified via `HF_HUB_OFFLINE=1` rather than a hard firewall block, since this environment has no admin rights to add one). **User is making this repo public.** Ran `/package-repo`: added LICENSE (MIT), CONTRIBUTING.md, GitHub PR/issue templates, AGENTS.md, restructured README with a Resource usage section. Full git history scanned for secrets before going public (clean). Caught and removed one thing before it shipped: an AGENTS.md draft line describing the real embedded-GitHub-token exposure on this dev machine — real operational security info, not project context, doesn't belong in a public repo.
 
 ## How to Run
 
