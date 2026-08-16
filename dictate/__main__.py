@@ -1,6 +1,7 @@
 import ctypes
 import logging
 import threading
+from collections.abc import Callable
 from ctypes import wintypes
 
 import pystray
@@ -49,26 +50,40 @@ def _setup_logging() -> None:
     logging.getLogger("__main__").setLevel(logging.DEBUG)
 
 
-def _make_icon_image() -> Image.Image:
+def _make_icon_image(state: str = "idle") -> Image.Image:
     img = Image.new("RGB", (64, 64), "black")
     draw = ImageDraw.Draw(img)
-    draw.ellipse((8, 8, 56, 56), fill="red")
+    if state == "paused":
+        draw.ellipse((8, 8, 56, 56), fill="gray")
+    elif state == "recording":
+        draw.ellipse((8, 8, 56, 56), fill="red", outline="white", width=4)
+    else:
+        draw.ellipse((8, 8, 56, 56), fill="red")
     return img
 
 
 class App:
-    def __init__(self) -> None:
+    def __init__(
+        self, icon_factory: Callable[..., pystray.Icon] = pystray.Icon
+    ) -> None:
+        self._paused = False
         self._recorder = audio.AudioRecorder()
         self._listener = hotkey.HotkeyListener(
             on_start=self._on_start,
             on_stop=self._on_stop,
             on_cancel=self._on_cancel,
         )
-        self._icon = pystray.Icon(
+        self._icon = icon_factory(
             "red-shark",
-            _make_icon_image(),
+            _make_icon_image("idle"),
             "red-shark",
-            menu=pystray.Menu(pystray.MenuItem("Quit", self._quit)),
+            menu=pystray.Menu(
+                pystray.MenuItem(
+                    lambda _item: "Resume" if self._paused else "Pause",
+                    self._toggle_pause,
+                ),
+                pystray.MenuItem("Quit", self._quit),
+            ),
         )
 
     # _on_start/_on_stop/_on_cancel run synchronously inside the global
@@ -80,10 +95,23 @@ class App:
     # inference, SendInput), every entry point is defensive: log properly,
     # never let an exception reach the hook boundary.
 
+    def _set_icon_state(self, state: str) -> None:
+        self._icon.icon = _make_icon_image(state)
+
+    def _toggle_pause(self, icon: pystray.Icon, _item: pystray.MenuItem) -> None:
+        self._paused = not self._paused
+        logger.info("dictation %s", "paused" if self._paused else "resumed")
+        self._set_icon_state("paused" if self._paused else "idle")
+        icon.update_menu()
+
     def _on_start(self) -> None:
+        if self._paused:
+            logger.debug("dictation hold ignored: paused")
+            return
         try:
             logger.info("dictation armed: recording started")
             self._recorder.start_recording()
+            self._set_icon_state("recording")
         except Exception:
             logger.exception("failed to start recording")
 
@@ -107,6 +135,8 @@ class App:
                 logger.debug("injected %d characters", len(text))
         except Exception:
             logger.exception("dictation pipeline failed")
+        finally:
+            self._set_icon_state("paused" if self._paused else "idle")
 
     def _on_cancel(self) -> None:
         try:
@@ -114,10 +144,16 @@ class App:
             self._recorder.stop_recording()
         except Exception:
             logger.exception("failed to stop recording on cancel")
+        finally:
+            self._set_icon_state("paused" if self._paused else "idle")
 
     def _quit(self, icon: pystray.Icon, _item: pystray.MenuItem) -> None:
         logger.info("quit requested")
         self._listener.stop()
+        try:
+            self._recorder.stop_recording()
+        except Exception:
+            logger.exception("failed to release microphone on quit")
         cleanup.shutdown()
         icon.stop()
 
@@ -127,6 +163,10 @@ class App:
             return False
         logger.info("console control event %d received, shutting down", ctrl_type)
         self._listener.stop()
+        try:
+            self._recorder.stop_recording()
+        except Exception:
+            logger.exception("failed to release microphone on shutdown")
         cleanup.shutdown()
         self._icon.stop()
         return True
