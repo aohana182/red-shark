@@ -79,7 +79,7 @@ bin/llamacpp/         → downloaded llama.cpp CPU binaries (gitignored)
 scripts/
   download_models.py → fetches everything models/ and bin/ need
   launch.bat          → quick-launch entry point (used by the Desktop shortcut)
-tests/                → pytest suite (51 tests as of the last session)
+tests/                → pytest suite (54 tests as of the last session)
 tasks/                → plan.md and todo.md, the working implementation plan
 ```
 
