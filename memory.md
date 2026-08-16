@@ -35,9 +35,16 @@ Session reasoning, decisions, and open questions not fully captured in commit me
 - Non-BMP Unicode (emoji) silently broke in `inject()` since `wScan` is 16-bit; fixed via UTF-16 surrogate pairs
 - `AudioRecorder.stop_recording()` crashed with `AttributeError` if called before `start_recording()` finished (or hung) — found via automated testing where real mic access hangs in this sandboxed environment; fixed defensively regardless of root cause
 
+### 2026-08-16 — Session 2 continued: Phase 3 (tray controls + PyInstaller build)
+
+**Task 10 (tray controls)**: added Pause/Resume to the tray menu and a 3-state icon (idle=red, recording=red+white ring, paused=gray). Hotkey holds are ignored while paused; a hold that already started before a pause toggle still stops correctly (icon/mic never leak — see the `test_icon_reverts_to_paused_after_stop_if_paused_meanwhile` test, which specifically guards the mid-hold-toggle race). Quit and the Ctrl+C/console-close paths now both explicitly release the mic. Found and fixed a real test-infrastructure bug along the way: `pystray.Icon`'s Win32 backend names its window class using `id(self)`, which CPython can reuse after garbage collection — constructing many real `pystray.Icon` instances across a pytest run (10+ `App()` calls already existed) was a latent "Class already exists" WinError waiting to happen, and this task's added tests tipped it over into an actual failure. Fixed by giving `App` an injectable `icon_factory` (mirrors `AudioRecorder`'s existing `stream_factory` pattern) and a `FakeIcon` test double, same rationale as faking `sounddevice` in `tests/test_audio.py`.
+
+**Task 11 (PyInstaller build)**: added `dictate.spec` (single-folder/onedir build). Had to fix `config.py`'s `PROJECT_ROOT` first -- it was derived from `__file__`, which points inside the frozen bundle once packaged, not next to the actual exe. Now branches on `sys.frozen`: uses `Path(sys.executable).parent` when frozen, the old `__file__`-based logic otherwise. Actually built and ran the exe this session (not just written the spec): copied `models/` and `bin/` alongside `dist/dictate/dictate.exe` (per the "not bundled, sits alongside" design), launched it standalone (no venv in the invocation), and confirmed via `dictate.log` that whisper preload, the cleanup LLM subprocess, the tray icon, and the keyboard hook all start correctly. Also force-killed the running exe with `taskkill /F` and confirmed the orphaned `llama-server.exe` still gets cleaned up by the Job Object in the packaged build, not just from source. Build artifacts (`dist/`, `build/`) were deleted after verification -- gitignored, reproducible via `pyinstaller dictate.spec`.
+
+**Task 12 (run-on-login)**: explicitly declined by the user when asked directly. Consistent with the Session 1 "launch on demand" decision.
+
 ## Outstanding / What's Left
 
-- **Phase 3 (Packaging & Daily-Use Polish) has not been started**: tray icon pause/resume controls, a proper PyInstaller build (currently only runs from the dev venv), optional run-on-login. Given the "launch on demand, not always-running" clarification, run-on-login is probably *not* wanted — worth confirming before doing that task.
 - **PRD Success Criteria checklist** (`PRD.md`) has not been formally walked through and checked off end-to-end by the user.
 - Model download step (`scripts/download_models.py`) has only been tested by this session's own runs (which happened to already have most things cached/present) — a genuinely clean-machine run (nothing downloaded yet) has not been tested start to finish.
 - `bin/llamacpp/` and `models/` are gitignored (large binaries/weights) — a fresh clone needs `pip install -r requirements.txt` **and** `python scripts/download_models.py` before first run. Now documented in `README.md`.
@@ -71,7 +78,7 @@ Quit via the tray icon's Quit item, or Ctrl+C / closing the console window if it
 ## How to Test
 
 ```
-.\.venv\Scripts\python.exe -m pytest -q        # 54 tests as of this session
+.\.venv\Scripts\python.exe -m pytest -q        # 67 tests as of this session
 .\.venv\Scripts\python.exe -m ruff check .
 .\.venv\Scripts\python.exe -m ruff format --check .
 ```

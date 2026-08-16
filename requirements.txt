@@ -4,6 +4,7 @@ pywin32
 pystray
 pytest
 ruff
+pyinstaller
 
 # No Python LLM binding needed for cleanup: cleanup.py runs the official
 # llama-server.exe binary (fetched by scripts/download_models.py, not pip)

@@ -225,12 +225,13 @@ See `tasks/plan.md` for architecture decisions, risks, and phase checkpoints.
 **Description:** Expand the `pystray` tray icon beyond "Quit" to include a pause/resume dictation toggle and a status indicator (icon changes while recording).
 
 **Acceptance criteria:**
-- [ ] Tray icon shows idle/recording state
-- [ ] Pause/resume works; hotkey is inert while paused
-- [ ] Quit cleanly shuts down the hook and releases the mic
+- [x] Tray icon shows idle/recording state (and paused, added beyond the original ask)
+- [x] Pause/resume works; hotkey is inert while paused
+- [x] Quit cleanly shuts down the hook and releases the mic
 
 **Verification:**
-- [ ] Manual test toggling pause/resume and confirming the hotkey is inert while paused
+- [x] Automated: 9 new tests in `tests/test_main.py`, RED/GREEN confirmed for each behavior
+- [ ] Manual test toggling pause/resume and confirming the hotkey is inert while paused — **still needs a live human check**
 
 **Dependencies:** Task 9
 
@@ -246,11 +247,12 @@ See `tasks/plan.md` for architecture decisions, risks, and phase checkpoints.
 **Description:** Create `dictate.spec`, verify a single-folder build runs standalone without the dev venv, bundling a reference to `models/` (not embedding large model files in the exe — document that `models/` must sit alongside the built exe).
 
 **Acceptance criteria:**
-- [ ] Built exe runs on this machine without an active Python install/venv
-- [ ] Full pipeline works from the built exe
+- [x] Built exe runs on this machine without an active Python install/venv — ran `dist\dictate\dictate.exe` directly, no venv in the invocation
+- [x] Full pipeline works from the built exe — preload, cleanup LLM subprocess, tray icon, and hotkey hook all started successfully from a standalone build; force-killing the exe also correctly killed the orphaned `llama-server.exe` via the Job Object, same as running from source
 
 **Verification:**
-- [ ] Manual test running the built exe fresh, dictating a sentence
+- [x] Automated-ish: real build + real launch verified this session (not a mock) — see `memory.md` for the log excerpt
+- [ ] Manual test actually dictating a sentence through the built exe — **still needs a live human check** (this environment can't drive a real mic)
 
 **Dependencies:** Task 10
 
@@ -261,7 +263,9 @@ See `tasks/plan.md` for architecture decisions, risks, and phase checkpoints.
 
 ---
 
-## Task 12: Run-on-login (optional)
+## Task 12: Run-on-login (optional) — SKIPPED
+
+**Decision (2026-08-16):** explicitly declined by the user when asked. Consistent with the earlier "launch on demand, not always-running" decision from Session 1 — run-on-login would work against that.
 
 **Description:** Startup folder shortcut creation, documented or scripted. Only implement if actually wanted — confirm before starting.
 

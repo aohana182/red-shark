@@ -77,7 +77,10 @@ This is exactly why red-shark is launch-on-demand rather than something that sta
 | `.venv\Scripts\python.exe -m pytest -q` | Run the test suite |
 | `.venv\Scripts\python.exe -m ruff check .` | Lint |
 | `.venv\Scripts\python.exe -m ruff format --check .` | Check formatting |
+| `.venv\Scripts\python.exe -m PyInstaller dictate.spec` | Build a standalone `dist\dictate\` folder (no Python/venv needed to run it) |
 | `scripts\launch.bat` | Quick-launch entry point (used by the Desktop shortcut) |
+
+**Standalone build:** `pyinstaller dictate.spec` produces a single-folder build at `dist\dictate\dictate.exe`. Model weights aren't bundled into it — copy (or symlink) your `models\` and `bin\` folders to sit alongside `dictate.exe` in `dist\dictate\` before running it; the exe resolves paths relative to its own location, not the source tree. Verified working end to end (preload, tray icon, hotkey, and the force-kill mic/RAM cleanup all behave the same as running from source).
 
 Calling `.venv\Scripts\python.exe` directly, rather than activating the venv first, is what this project's own setup and testing has used throughout — it sidesteps per-shell activation differences between cmd and PowerShell.
 

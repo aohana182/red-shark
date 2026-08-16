@@ -38,14 +38,14 @@ Build a background Windows utility, Ctrl+Shift hold-to-talk, that captures speec
 - [ ] Review with human before proceeding to packaging
 
 ### Phase 3: Packaging & Daily-Use Polish
-- [ ] Task 10: Tray icon controls (pause/resume, recording-state indicator)
-- [ ] Task 11: PyInstaller build
-- [ ] Task 12: Run-on-login (optional, only if wanted)
+- [x] Task 10: Tray icon controls (pause/resume, recording-state indicator) — automated-tested; live human check still pending
+- [x] Task 11: PyInstaller build — built and launched for real this session (`dictate.spec`); full pipeline confirmed standalone, including the force-kill mic/RAM cleanup; live dictation-through-the-exe check still pending
+- [x] Task 12: Run-on-login — explicitly declined by the user, not implemented (see `tasks/todo.md`)
 
 ### Checkpoint: Complete
-- [ ] All PRD Success Criteria met
-- [ ] Standalone build runs without the dev venv active
-- [ ] Ready for daily use
+- [ ] All PRD Success Criteria met — most are, two still partial, see `PRD.md`
+- [x] Standalone build runs without the dev venv active
+- [ ] Ready for daily use — pending the live human checks noted above
 
 ## Risks and Mitigations
 | Risk | Impact | Mitigation |

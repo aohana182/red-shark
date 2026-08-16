@@ -1,6 +1,18 @@
+import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+def _resolve_project_root() -> Path:
+    # A PyInstaller-frozen build's __file__ points inside the bundle, not
+    # next to the built exe -- models/ and bin/ are meant to sit alongside
+    # the exe (see README), so the root must be derived from sys.executable
+    # instead when frozen.
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+PROJECT_ROOT = _resolve_project_root()
 MODELS_DIR = PROJECT_ROOT / "models"
 
 SAMPLE_RATE = 16000
