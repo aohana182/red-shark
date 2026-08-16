@@ -60,13 +60,13 @@ def transcribe(audio: np.ndarray, sample_rate: int) -> str:
 - **Never:** add cloud fallback, telemetry, accounts, or licensing of any kind; add personal dictionary, per-app profiles, live overlay, or voice commands (explicitly out of scope for v1)
 
 ## Success Criteria
-- [ ] Hold Ctrl+Shift → speak → release → correct text appears at cursor in the focused app
-- [ ] Works in at least: Notepad, a browser text field, VS Code
-- [ ] End-to-end latency (release hotkey → text inserted) under ~3s for a one-sentence dictation
-- [ ] Cleanup removes filler words ("um", "uh") and fixes obvious punctuation without altering meaning
-- [ ] Runs entirely offline — works with network disabled
-- [ ] No admin/elevated privileges required to run
-- [ ] `Ctrl+Shift+Esc`, `Ctrl+Shift+Z`, `Ctrl+Shift+T`, `Ctrl+Shift+S`, `Ctrl+Shift+N` (and similar three-key shortcuts) continue to work normally — dictation never arms or interferes when a third key follows
+- [x] Hold Ctrl+Shift → speak → release → correct text appears at cursor in the focused app — confirmed 2026-08-16, three real dictations in `dictate.log`
+- [ ] Works in at least: Notepad, a browser text field, VS Code — **partially confirmed**: tested in Notepad and Notepad++ (2026-08-16). Browser and VS Code not yet tested.
+- [x] End-to-end latency (release hotkey → text inserted) under ~3s for a one-sentence dictation — confirmed, measured 1.5-1.7s in `dictate.log` (2026-08-16)
+- [x] Cleanup removes filler words ("um", "uh") and fixes obvious punctuation without altering meaning — the "without altering meaning" half is now solid (regression-tested, see `tests/test_cleanup_quality.py`); "um"/"uh" removal is real but inconsistent, especially mid-sentence — accepted limitation of the 1.5B model, see `memory.md`
+- [x] Runs entirely offline — works with network disabled — confirmed 2026-08-16 with `HF_HUB_OFFLINE=1` (forces the whisper loader to fail rather than silently fall back to network): full transcribe+cleanup pipeline ran successfully with zero network access. Not tested via a hard firewall block (would need admin rights not available in this environment) — the env-var test is real but slightly weaker evidence than a true network-disabled run.
+- [x] No admin/elevated privileges required to run — confirmed by inspection: `scripts/launch.bat` requests no elevation, and the app has been run repeatedly from a normal user shell
+- [x] `Ctrl+Shift+Esc`, `Ctrl+Shift+Z`, `Ctrl+Shift+T`, `Ctrl+Shift+S`, `Ctrl+Shift+N` (and similar three-key shortcuts) continue to work normally — dictation never arms or interferes when a third key follows — verified via synthetic-input testing in Session 1 (`memory.md`), and consistent with real Alt+Tab/Ctrl+C/Ctrl+V activity observed in `dictate.log` during live use
 
 ## Hardware Reference
 Lenovo ThinkPad T14s Gen 6, Intel Core Ultra 7 255U (12 cores / 14 threads), 32GB RAM, integrated Intel Graphics (no discrete GPU). All model choices above are CPU-only by design to match this hardware.

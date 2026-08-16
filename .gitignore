@@ -1,10 +1,30 @@
+# Environment -- never commit real secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Python
 .venv/
-models/
-bin/
+venv/
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.egg-info/
 .pytest_cache/
 .ruff_cache/
 build/
 dist/
+
+# Project-specific
+models/
+bin/
 dictate.log
