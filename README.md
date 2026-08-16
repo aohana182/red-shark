@@ -42,7 +42,7 @@ Both `models/` and `bin/` are gitignored; every fresh clone needs this step.
 
 On startup it preloads both models (~2-2.5s total) before the hotkey becomes active, then sits in the system tray.
 
-**Quit:** the tray icon's Quit item, or Ctrl+C in the console if it's not minimized out of view. (Right-click on the tray icon has not been confirmed reliable in testing — Ctrl+C is the dependable fallback. See `memory.md`.)
+**Quit:** right-click the tray icon and choose Quit — confirmed working. (Ctrl+C in the console remains a fallback if the console isn't minimized out of view.)
 
 **Logs:** `dictate.log` in the project root (gitignored). DEBUG level for this app's own code, WARNING+ for third-party libraries.
 
