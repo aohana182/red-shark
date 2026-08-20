@@ -63,6 +63,27 @@ Session reasoning, decisions, and open questions not fully captured in commit me
 
 **Still true**: setup steps (venv, `download_models.py` on a genuinely clean machine) still haven't been tested from a truly clean checkout.
 
+### 2026-08-20 — Session 3: first real launch, Smart App Control block, av-stub fix, README rewrite
+
+**What happened**: user's actual first attempt to launch the app. Two problems surfaced:
+
+1. **Desktop shortcut lived on a OneDrive-redirected path** (`C:\Users\avioh\OneDrive\Desktop`, via Windows Known Folder Backup — not something red-shark did) and the user doesn't use the Desktop at all. Moved `red-shark.lnk` into the project root instead (same target: `scripts\launch.bat`, minimized), removed the OneDrive copy, added `*.lnk` to `.gitignore`.
+2. **App wouldn't launch at all**: Windows 11 **Smart App Control** (confirmed enabled/enforced via `HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy!VerifiedAndReputablePolicyState = 1`) was blocking `av`'s compiled `frame.pyd` (`av` is a `faster-whisper` dependency, pulled in via `from faster_whisper.audio import decode_audio`). Confirmed via the exact CodeIntegrity event log entry (event ID 3077): "did not meet the Enterprise signing level requirements." SAC has no per-app allowlist for regular users — the block is real and not something a config tweak fixes.
+
+**Root-caused before touching anything**: read `faster_whisper`'s actual installed source and confirmed `decode_audio()` (the only function that touches `av`) is never called by this app — `transcribe()` always passes an already-decoded numpy array, and `faster_whisper/transcribe.py` explicitly skips `decode_audio()` when the input is already an `np.ndarray`. The crash was purely from the unconditional `import av` at the top of `faster_whisper/audio.py`, not from any actual use of it.
+
+**Fix** (commit `78b3e46`): `dictate/_av_stub.py` registers a stub `av` module (and its `av.audio`/`av.audio.resampler`/`av.audio.fifo`/`av.error` submodules) in `sys.modules` before `faster_whisper` is imported in `transcribe.py`. Real `av` never loads; stubbed functions raise if ever actually called, as a tripwire in case a future code path genuinely needs real audio decoding. Lives entirely in red-shark's own source — no site-packages edits, no admin rights, no changes to Windows security settings.
+
+**User explicitly declined** turning off Smart App Control (irreversible without a clean Windows reinstall) and declined swapping the STT library/model — wanted a fix that touched neither. This was the only option that satisfied both constraints.
+
+**Verified**: full pytest suite (67/67, including the real whisper-transcription fixture test which exercises the actual import path), `ruff check` + `ruff format --check` clean, and a live `python -m dictate` run — whisper preload, cleanup LLM subprocess, tray icon, and keyboard hook all started successfully, no orphaned `llama-server.exe` after shutdown (confirmed via `tasklist`).
+
+**Live voice test, cold machine, first ever use**: worked end to end — dictated text landed at the cursor correctly (confirmed via `dictate.log`, since this session's own instructions to Claude were dictated through red-shark itself). Some filler-word/distortion artifacts noted by the user as expected and tolerable, consistent with the known "inconsistent on ambiguous fillers" limitation from Session 2 — not a new bug.
+
+**README.md rewritten** (same commit as below): added a "How it works" pipeline diagram (hotkey → audio → transcribe → cleanup → inject, naming the actual module per stage), a "Known limitations" section (filler inconsistency, cleanup non-determinism, cold-start expectations), and a "Troubleshooting" section documenting the Smart App Control issue for future reference (in case it recurs after a `faster_whisper` version bump, or hits a different machine with SAC enabled). Quick start updated to reference the project-root shortcut instead of the old Desktop one.
+
+**Next**: browser/VS Code injection testing, a genuinely clean-machine `download_models.py` run, and final `PRD.md` checkpoint sign-off are all still open — same as end of Session 2.
+
 **Update, same session**: PRD Success Criteria checklist walked and updated in `PRD.md` — 5 of 7 confirmed, 2 partial (browser/VS Code untested; offline verified via `HF_HUB_OFFLINE=1` rather than a hard firewall block, since this environment has no admin rights to add one). **User is making this repo public.** Ran `/package-repo`: added LICENSE (MIT), CONTRIBUTING.md, GitHub PR/issue templates, AGENTS.md, restructured README with a Resource usage section. Full git history scanned for secrets before going public (clean). Caught and removed one thing before it shipped: an AGENTS.md draft line describing the real embedded-GitHub-token exposure on this dev machine — real operational security info, not project context, doesn't belong in a public repo.
 
 ## How to Run
