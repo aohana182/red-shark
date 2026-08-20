@@ -1,7 +1,10 @@
 import numpy as np
-from faster_whisper import WhisperModel
 
-from dictate import config
+from dictate import _av_stub, config
+
+_av_stub.install()
+
+from faster_whisper import WhisperModel
 
 _model: WhisperModel | None = None
 
