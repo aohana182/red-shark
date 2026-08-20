@@ -75,7 +75,9 @@ Once running: click into any text field, hold **Ctrl+Shift**, speak a sentence, 
 
 ### Day-to-day launch
 
-No need to activate the venv or remember the module invocation every time — a `red-shark.lnk` shortcut in the project root runs `scripts\launch.bat`, opening minimized in the tray. Quit via the tray icon's right-click **Quit** item (Ctrl+C in the console is the fallback if it isn't minimized out of view).
+No need to activate the venv or remember the module invocation every time — a `red-shark.lnk` shortcut in the project root runs `pythonw.exe -m dictate` directly (the windowless Python interpreter), so it starts straight into the tray with **no console window at all**. Quit via the tray icon's right-click **Quit** item — that's the only shutdown path in this mode, since there's no console to Ctrl+C.
+
+Running `python -m dictate` from a real terminal (e.g. for debugging) still prints logs to the console as normal, in addition to `dictate.log`.
 
 ## Requirements
 
@@ -129,7 +131,7 @@ This is exactly why red-shark is launch-on-demand rather than something that sta
 | `.venv\Scripts\python.exe -m ruff check .` | Lint |
 | `.venv\Scripts\python.exe -m ruff format --check .` | Check formatting |
 | `.venv\Scripts\python.exe -m PyInstaller dictate.spec` | Build a standalone `dist\dictate\` folder (no Python/venv needed to run it) |
-| `scripts\launch.bat` | Quick-launch entry point (used by the `red-shark.lnk` shortcut) |
+| `scripts\launch.bat` | Alternative quick-launch entry point via `pythonw.exe` (the `red-shark.lnk` shortcut now calls `pythonw.exe` directly instead) |
 
 **Standalone build:** `pyinstaller dictate.spec` produces a single-folder build at `dist\dictate\dictate.exe`. Model weights aren't bundled into it — copy (or symlink) your `models\` and `bin\` folders to sit alongside `dictate.exe` in `dist\dictate\` before running it; the exe resolves paths relative to its own location, not the source tree. Verified working end to end (preload, tray icon, hotkey, and the force-kill mic/RAM cleanup all behave the same as running from source).
 
@@ -155,7 +157,7 @@ models/               → downloaded model weights (gitignored)
 bin/llamacpp/         → downloaded llama.cpp CPU binaries (gitignored)
 scripts/
   download_models.py → fetches everything models/ and bin/ need
-  launch.bat          → quick-launch entry point (used by the red-shark.lnk shortcut)
+  launch.bat          → alternative quick-launch entry point (red-shark.lnk calls pythonw.exe directly)
 tests/                → pytest suite
 tasks/                → plan.md and todo.md, the working implementation plan
 ```

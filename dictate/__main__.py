@@ -1,5 +1,6 @@
 import ctypes
 import logging
+import sys
 import threading
 from collections.abc import Callable
 from ctypes import wintypes
@@ -38,13 +39,16 @@ _HandlerRoutine = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.DWORD)
 
 def _setup_logging() -> None:
     log_file = config.PROJECT_ROOT / "dictate.log"
+    handlers: list[logging.Handler] = [logging.FileHandler(log_file, encoding="utf-8")]
+    # Under pythonw.exe (no console attached) sys.stderr is None, not just
+    # closed -- a StreamHandler would crash on the first log call. Only add
+    # it when a real stream exists, i.e. when launched from a console.
+    if sys.stderr is not None:
+        handlers.append(logging.StreamHandler())
     logging.basicConfig(
         level=logging.WARNING,  # quiets third-party libraries (httpx, PIL, ...)
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(log_file, encoding="utf-8"),
-        ],
+        handlers=handlers,
     )
     logging.getLogger("dictate").setLevel(logging.DEBUG)
     logging.getLogger("__main__").setLevel(logging.DEBUG)
