@@ -28,3 +28,4 @@ dist/
 models/
 bin/
 dictate.log
+*.lnk
