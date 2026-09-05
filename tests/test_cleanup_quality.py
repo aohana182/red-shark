@@ -64,3 +64,46 @@ def test_preserves_a_hedge_clause_expressing_real_uncertainty(_real_cleanup_serv
 
     assert "wednesday" in result.lower()
     assert "not totally sure" in result.lower()
+
+
+# Real whisper output captured in dictate.log during live use (2026-09-05
+# 13:17:39). The prompt of the day turned a genuine question into a negated
+# statement of fact and invented an ending for a clause the mic had cut off
+# mid-word: "...What about WhatsApp? Do I need to have a user-facing page with
+# the QR codes for" came back as "...but I don't have a user-facing page with
+# the QR codes for WhatsApp." Both the question and a whole sentence were lost.
+_REAL_TRANSCRIPT_CUT_OFF_MID_SENTENCE = (
+    "Before we get there, let's think about the user onboarding process. "
+    "Telegram icon provision bot, I can add manual all the accounts, shit "
+    "like this. What about WhatsApp? Do I need to have a user-facing page "
+    "with the QR codes for"
+)
+
+
+def test_does_not_rewrite_a_question_as_a_negated_statement(_real_cleanup_server):
+    result = cleanup(_REAL_TRANSCRIPT_CUT_OFF_MID_SENTENCE)
+
+    assert "what about whatsapp" in result.lower()
+    assert "don't have" not in result.lower()
+    assert "do not have" not in result.lower()
+
+
+def test_does_not_invent_an_ending_for_a_clause_the_mic_cut_off(_real_cleanup_server):
+    result = cleanup(_REAL_TRANSCRIPT_CUT_OFF_MID_SENTENCE)
+
+    # The recording stops after "for". Anything the model appends after it is
+    # fabricated content, which is worse than leaving the sentence unfinished.
+    tail = result.lower().split("qr codes for")[-1]
+    assert tail.strip(" .?!") == "", f"invented an ending: {tail!r}"
+
+
+def test_does_not_reorder_a_self_corrected_sentence_into_nonsense(_real_cleanup_server):
+    # dictate.log 2026-09-05 13:09:25 -- came back as "...the quickest to the
+    # market and the most secure is what.", a garbled reordering.
+    raw = (
+        "Okay, I think what's the best, the quickest to the market and the most secure."
+    )
+
+    result = cleanup(raw)
+
+    assert "is what" not in result.lower()

@@ -35,11 +35,19 @@ class HotkeyStateMachine:
         on_start: Callable[[], None],
         on_stop: Callable[[], None],
         on_cancel: Callable[[], None] | None = None,
+        modifier_state: Callable[[], tuple[bool, bool]] | None = None,
     ) -> None:
         self.threshold_s = threshold_s
         self._on_start = on_start
         self._on_stop = on_stop
         self._on_cancel = on_cancel or (lambda: None)
+        # Returns the *physical* (ctrl_held, shift_held) state. Windows drops
+        # key-up events whenever focus leaves mid-hold -- Alt+Tab, Win+Space
+        # (layout switch), a UAC prompt -- so the flags accumulated from hook
+        # events alone go stale and stay stale. Injected rather than called
+        # directly so the state machine stays a pure, testable unit; None
+        # means "trust the tracked flags", which is what the tests use.
+        self._modifier_state = modifier_state
         self._lock = threading.Lock()
         self._state = _IDLE
         self._ctrl_down = False
@@ -109,8 +117,24 @@ class HotkeyStateMachine:
                 # the other modifier is still down. Cancel the pending arm.
                 self._state = _IDLE
                 self._armed_at = None
-            elif not self._ctrl_down and not self._shift_down:
-                self._state = _IDLE
+            else:
+                if self._modifier_state is not None:
+                    # Treat a modifier as held only if BOTH sources agree it
+                    # is. The tracked flag can be stale-high (its key-up was
+                    # swallowed); the OS probe can be stale-high too, since
+                    # a low-level hook can run before the async key state
+                    # catches up with the release being reported right now.
+                    # ANDing them means either source can clear a modifier,
+                    # so neither kind of staleness can pin this state.
+                    ctrl_real, shift_real = self._modifier_state()
+                    self._ctrl_down = self._ctrl_down and ctrl_real
+                    self._shift_down = self._shift_down and shift_real
+                if not self._ctrl_down and not self._shift_down:
+                    # Only escape from _SUPPRESSED. Trusting the tracked flags
+                    # alone made this terminal: one swallowed modifier key-up
+                    # pinned a flag True forever, and the hotkey never armed
+                    # again for the life of the process.
+                    self._state = _IDLE
 
         if callback is not None:
             callback()
@@ -123,8 +147,19 @@ class HotkeyStateMachine:
                 and self._armed_at is not None
                 and now >= self._armed_at
             ):
-                self._state = _ARMED
-                callback = self._on_start
+                if self._modifier_state is not None and not all(self._modifier_state()):
+                    # A stale flag got us here, not a real hold: seen in the
+                    # wild as a bare Ctrl tap arming the mic and capturing 0
+                    # samples, because a Shift key-up had been swallowed
+                    # seconds earlier. Resync and stand down.
+                    ctrl_real, shift_real = self._modifier_state()
+                    self._ctrl_down = self._ctrl_down and ctrl_real
+                    self._shift_down = self._shift_down and shift_real
+                    self._state = _IDLE
+                    self._armed_at = None
+                else:
+                    self._state = _ARMED
+                    callback = self._on_start
 
         if callback is not None:
             callback()
@@ -164,6 +199,9 @@ _user32.CallNextHookEx.argtypes = [
 _user32.UnhookWindowsHookEx.restype = wintypes.BOOL
 _user32.UnhookWindowsHookEx.argtypes = [wintypes.HANDLE]
 
+_user32.GetAsyncKeyState.restype = ctypes.c_short
+_user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+
 _user32.GetMessageW.restype = ctypes.c_int
 _user32.GetMessageW.argtypes = [
     ctypes.POINTER(wintypes.MSG),
@@ -171,6 +209,18 @@ _user32.GetMessageW.argtypes = [
     ctypes.c_uint,
     ctypes.c_uint,
 ]
+
+
+def real_modifier_state() -> tuple[bool, bool]:
+    """Physical (ctrl_held, shift_held) straight from Windows.
+
+    The high bit of GetAsyncKeyState is the current physical down state, which
+    unlike our hook-event bookkeeping survives key-ups that were never
+    delivered to us because focus moved mid-hold.
+    """
+    ctrl = any(_user32.GetAsyncKeyState(vk) & 0x8000 for vk in (0xA2, 0xA3))
+    shift = any(_user32.GetAsyncKeyState(vk) & 0x8000 for vk in (0xA0, 0xA1))
+    return ctrl, shift
 
 
 class _KBDLLHOOKSTRUCT(ctypes.Structure):
@@ -209,25 +259,49 @@ class HotkeyListener:
         on_cancel: Callable[[], None] | None = None,
         threshold_ms: int = config.HOLD_THRESHOLD_MS,
     ) -> None:
-        self._sm = HotkeyStateMachine(threshold_ms / 1000, on_start, on_stop, on_cancel)
+        self._sm = HotkeyStateMachine(
+            threshold_ms / 1000,
+            on_start,
+            on_stop,
+            on_cancel,
+            modifier_state=real_modifier_state,
+        )
         self._hook_id = None
         self._proc = _LowLevelKeyboardProc(self._hook_proc)
 
+    def _tick(self) -> None:
+        # Runs on a Timer thread, whose unhandled exceptions also go to a
+        # stderr that is None under pythonw.exe. An arm lost here is silent
+        # and unrecoverable until the next keypress, so log it properly.
+        try:
+            self._sm.on_tick(time.monotonic())
+        except Exception:
+            logger.exception("hotkey arming tick failed")
+
     def _hook_proc(self, n_code: int, w_param: int, l_param: int) -> int:
-        if n_code >= 0:
-            kb = ctypes.cast(l_param, ctypes.POINTER(_KBDLLHOOKSTRUCT)).contents
-            now = time.monotonic()
-            if w_param in (WM_KEYDOWN, WM_SYSKEYDOWN):
-                logger.debug("key down: vk=0x%02X", kb.vkCode)
-                deadline = self._sm.key_down(kb.vkCode, now)
-                if deadline is not None:
-                    delay = max(0.0, deadline - now)
-                    threading.Timer(
-                        delay, lambda: self._sm.on_tick(time.monotonic())
-                    ).start()
-            elif w_param in (WM_KEYUP, WM_SYSKEYUP):
-                logger.debug("key up: vk=0x%02X", kb.vkCode)
-                self._sm.key_up(kb.vkCode, now)
+        # Nothing may escape this function. It is a ctypes callback invoked by
+        # Windows: an exception here doesn't propagate, it gets swallowed with
+        # a bare stderr traceback -- and under pythonw.exe sys.stderr is None,
+        # so it vanishes with no trace at all while the hook keeps running.
+        # That is exactly how a dead hotkey looked in the field: keystrokes
+        # still logging, pipeline silent, nothing to diagnose from.
+        try:
+            if n_code >= 0:
+                kb = ctypes.cast(l_param, ctypes.POINTER(_KBDLLHOOKSTRUCT)).contents
+                now = time.monotonic()
+                if w_param in (WM_KEYDOWN, WM_SYSKEYDOWN):
+                    if config.LOG_KEYSTROKES:
+                        logger.debug("key down: vk=0x%02X", kb.vkCode)
+                    deadline = self._sm.key_down(kb.vkCode, now)
+                    if deadline is not None:
+                        delay = max(0.0, deadline - now)
+                        threading.Timer(delay, self._tick).start()
+                elif w_param in (WM_KEYUP, WM_SYSKEYUP):
+                    if config.LOG_KEYSTROKES:
+                        logger.debug("key up: vk=0x%02X", kb.vkCode)
+                    self._sm.key_up(kb.vkCode, now)
+        except Exception:
+            logger.exception("keyboard hook callback failed")
         return _user32.CallNextHookEx(None, n_code, w_param, l_param)
 
     def start(self) -> None:
