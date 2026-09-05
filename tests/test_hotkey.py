@@ -217,3 +217,112 @@ def test_on_stop_reentering_key_events_does_not_deadlock():
 
     assert finished, "key_up deadlocked instead of returning"
     assert rec.stops == 1
+
+
+class FakeModifierState:
+    """Stands in for Windows' physical key state (GetAsyncKeyState)."""
+
+    def __init__(self, ctrl: bool = False, shift: bool = False):
+        self.ctrl = ctrl
+        self.shift = shift
+
+    def __call__(self) -> tuple[bool, bool]:
+        return self.ctrl, self.shift
+
+
+def test_stale_shift_flag_does_not_arm_on_a_bare_ctrl_tap():
+    # Real failure from dictate.log 2026-09-05 13:22:22. Shift was physically
+    # released during the previous hold but its key-up never reached the hook
+    # (focus moved), so _shift_down stayed True. A later bare Ctrl tap then
+    # armed the mic and captured 0 samples -- "empty audio buffer".
+    rec = Recorder()
+    physical = FakeModifierState(ctrl=True, shift=True)
+    sm = HotkeyStateMachine(
+        THRESHOLD_S, rec.on_start, rec.on_stop, rec.on_cancel, modifier_state=physical
+    )
+
+    sm.key_down(VK_LCONTROL, now=0.0)
+    sm.key_down(VK_LSHIFT, now=0.0)
+    sm.on_tick(now=THRESHOLD_S)
+    physical.ctrl = False
+    sm.key_up(VK_LCONTROL, now=1.0)
+    assert rec.starts == 1 and rec.stops == 1
+
+    # Shift is now physically up too, but its key-up is never delivered.
+    physical.shift = False
+
+    # A bare Ctrl tap must not arm on the strength of the stale shift flag.
+    physical.ctrl = True
+    sm.key_down(VK_LCONTROL, now=2.0)
+    sm.on_tick(now=2.0 + THRESHOLD_S)
+
+    assert rec.starts == 1, "bare Ctrl tap armed recording via a stale Shift flag"
+
+
+def test_suppressed_is_escapable_when_a_modifier_key_up_was_swallowed():
+    # The failure that killed the hotkey for the rest of the process on
+    # 2026-09-05: _SUPPRESSED was only escapable via the tracked flags, so a
+    # single swallowed modifier key-up pinned one True forever and no
+    # subsequent hold could ever reach _IDLE -> _WAITING -> _ARMED again.
+    rec = Recorder()
+    physical = FakeModifierState(ctrl=True, shift=True)
+    sm = HotkeyStateMachine(
+        THRESHOLD_S, rec.on_start, rec.on_stop, rec.on_cancel, modifier_state=physical
+    )
+
+    sm.key_down(VK_LCONTROL, now=0.0)
+    sm.key_down(VK_LSHIFT, now=0.0)
+    sm.key_down(VK_ESCAPE, now=0.05)  # third key -> _SUPPRESSED
+
+    # User lets go of both, but only Ctrl's key-up is delivered.
+    physical.ctrl = False
+    physical.shift = False
+    sm.key_up(VK_LCONTROL, now=0.2)
+
+    # A clean hold afterwards must still arm.
+    physical.ctrl = True
+    physical.shift = True
+    sm.key_down(VK_LCONTROL, now=1.0)
+    sm.key_down(VK_LSHIFT, now=1.0)
+    sm.on_tick(now=1.0 + THRESHOLD_S)
+
+    assert rec.starts == 1, "hotkey stayed suppressed forever after a lost key-up"
+
+
+def test_tick_logs_instead_of_losing_the_arm_silently(caplog):
+    # A Timer-thread exception goes to a stderr that is None under
+    # pythonw.exe, so this used to vanish entirely.
+    from dictate.hotkey import HotkeyListener
+
+    listener = HotkeyListener(lambda: None, lambda: None)
+
+    def boom(_now):
+        raise RuntimeError("kaboom")
+
+    listener._sm.on_tick = boom
+    listener._tick()
+
+    assert "hotkey arming tick failed" in caplog.text
+
+
+def test_escapes_suppressed_even_when_the_os_probe_lags_behind_the_release():
+    # A low-level hook can run before Windows' async key state catches up with
+    # the very release it is reporting, so the probe can read stale-high too.
+    # Neither source may be trusted alone: either one saying "up" must count.
+    rec = Recorder()
+    physical = FakeModifierState(ctrl=True, shift=True)  # never updates
+    sm = HotkeyStateMachine(
+        THRESHOLD_S, rec.on_start, rec.on_stop, rec.on_cancel, modifier_state=physical
+    )
+
+    sm.key_down(VK_LCONTROL, now=0.0)
+    sm.key_down(VK_LSHIFT, now=0.0)
+    sm.key_down(VK_ESCAPE, now=0.05)  # -> _SUPPRESSED
+    sm.key_up(VK_LCONTROL, now=0.2)
+    sm.key_up(VK_LSHIFT, now=0.2)
+
+    sm.key_down(VK_LCONTROL, now=1.0)
+    sm.key_down(VK_LSHIFT, now=1.0)
+    sm.on_tick(now=1.0 + THRESHOLD_S)
+
+    assert rec.starts == 1, "a lagging OS probe pinned the state machine"

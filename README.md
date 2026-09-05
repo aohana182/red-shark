@@ -41,7 +41,7 @@ Ctrl+Shift held  →  hotkey.py    →  low-level keyboard hook (WH_KEYBOARD_LL)
   speak, release  →  audio.py    →  sounddevice records the hold, returns a
                                       numpy float32 buffer on release
                                             │
-                     transcribe.py → faster-whisper (tiny.en, int8, CPU) turns
+                     transcribe.py → faster-whisper (base.en, int8, CPU) turns
                                       the buffer into raw text
                                             │
                      cleanup.py   → a local llama-server.exe subprocess
@@ -91,7 +91,7 @@ Running `python -m dictate` from a real terminal (e.g. for debugging) still prin
 Both models load once at startup and stay resident for as long as the app is running — traded off deliberately against reloading fresh on every dictation, which would add ~1.2-1.5s of latency per hold. In exchange:
 
 - **Cleanup LLM** (Qwen2.5-1.5B-Instruct, Q4_K_M): ~1.7GB RAM
-- **Whisper** (`tiny.en`, int8): a smaller additional footprint on top of that
+- **Whisper** (`base.en`, int8): a smaller additional footprint on top of that
 - **Startup preload**: ~2-2.5s before the hotkey becomes active
 
 This is exactly why red-shark is launch-on-demand rather than something that starts with Windows — it's meant to sit in the tray only while you're actively dictating, not hold onto that RAM in the background all day.
@@ -115,7 +115,7 @@ This is exactly why red-shark is launch-on-demand rather than something that sta
 ## Tech stack
 
 - **Python 3.11+** — the whole app
-- **faster-whisper** (`tiny.en`, `int8`, CPU) — on-device speech-to-text
+- **faster-whisper** (`base.en`, `int8`, CPU) — on-device speech-to-text
 - **llama.cpp** (`llama-server.exe` binary) + **Qwen2.5-1.5B-Instruct GGUF** — local cleanup LLM, run as a subprocess and talked to over local HTTP, not a Python binding
 - **pywin32 / ctypes** — the low-level keyboard hook (`WH_KEYBOARD_LL`) and `SendInput` text injection
 - **pystray** — the system tray icon
@@ -138,6 +138,8 @@ This is exactly why red-shark is launch-on-demand rather than something that sta
 Calling `.venv\Scripts\python.exe` directly, rather than activating the venv first, is what this project's own setup and testing has used throughout — it sidesteps per-shell activation differences between cmd and PowerShell.
 
 **Logs:** `dictate.log` in the project root (gitignored) — DEBUG level for this app's own code, WARNING+ for third-party libraries. This includes the raw and cleaned text of everything you dictate, in plaintext, for debugging — it never leaves your machine, but keep that in mind before sharing the file itself.
+
+Setting `REDSHARK_LOG_KEYSTROKES=1` additionally logs every key the global hook sees, with its virtual-key code. That is useful when debugging the hotkey itself, but it makes `dictate.log` a plaintext record of everything you type in **any** application, passwords included — so it is off unless you set it, and worth deleting the log afterwards.
 
 ---
 

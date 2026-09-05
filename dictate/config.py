@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -17,10 +18,23 @@ MODELS_DIR = PROJECT_ROOT / "models"
 
 SAMPLE_RATE = 16000
 
-WHISPER_MODEL_SIZE = "tiny.en"
+# base.en over tiny.en: tiny was mishearing ordinary technical speech in real
+# use ("WhatsApp" -> "what's up", "bot" -> "boat"/"board", "Telegram IDs" ->
+# "Telegram ideas"). Note this was NOT reproducible on clean synthesized audio
+# -- tiny.en scores full marks there, so the gain is robustness to real
+# microphone speech, not vocabulary coverage. small.en also transcribes these
+# correctly but runs at only ~1.3x realtime on this CPU (vs ~3.8x for base.en,
+# ~6.9x for tiny.en), which is too slow to sit between a key release and text
+# appearing at the cursor.
+WHISPER_MODEL_SIZE = "base.en"
 WHISPER_COMPUTE_TYPE = "int8"
 
 HOLD_THRESHOLD_MS = 250
+
+# Logs every keystroke the global hook sees, with its virtual-key code. Useful
+# for debugging the hotkey, but it turns dictate.log into a plaintext keylog of
+# everything typed in every app -- passwords included -- so it is opt-in.
+LOG_KEYSTROKES = os.environ.get("REDSHARK_LOG_KEYSTROKES") == "1"
 
 # Delay between injected characters. Sending a whole sentence as one large
 # burst of keystrokes with no delay can overwhelm some apps' input handling,

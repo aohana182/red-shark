@@ -109,3 +109,37 @@ Quit via the tray icon's Quit item, or Ctrl+C / closing the console window if it
 .\.venv\Scripts\python.exe -m ruff check .
 .\.venv\Scripts\python.exe -m ruff format --check .
 ```
+
+### 2026-09-05 — Session 4: dead hotkey root-caused from the log, whisper bumped, cleanup prompt hardened
+
+**Trigger**: user reported "the quality went to shit" and, mid-session, that dictation had stopped reaching the text box entirely.
+
+**The hotkey was dead, and the log was the only evidence.** `dictate.log` had grown to 24MB / 368k lines, of which 367k were raw keystroke DEBUG lines. Filtering those left 731 real lines, which showed the pipeline logger (`__main__`) going **completely silent after 13:22:22** while `dictate.hotkey` kept logging keystrokes normally. Two textbook-valid holds (Ctrl+Shift for 5.2s and 7.2s, no third key) produced nothing at all.
+
+**How it was diagnosed** (worth repeating — guessing would have failed here):
+1. Extracted the exact key-event stream from the log and **replayed it through the real `HotkeyStateMachine`**. The replay said both holds *should* have armed — so the logged input was valid and the state machine's own logic wasn't obviously at fault.
+2. Ran the arming path (state machine + real `threading.Timer`) 300x in isolation looking for an early-fire race on `now >= self._armed_at`. 0/300 failures — not the cause.
+3. `py-spy dump` on the live process: hook thread idle in `GetMessageW`, no deadlock, no leaked Timer threads, 5 Python threads total. The process was **healthy and idle, just not arming**.
+
+**Two real bugs found, both reproduced before fixing** (`scratchpad/proveit.py` pattern: set `_modifier_state = None` to restore exact pre-fix semantics, assert failure, then assert pass):
+
+1. **`_SUPPRESSED` was a terminal state.** Its only exit was `elif not self._ctrl_down and not self._shift_down`, both flags being accumulated purely from hook events. Windows drops modifier key-ups whenever focus moves mid-hold — and the log shows the user hitting **Win+Space (keyboard layout switch)** and Alt+Tab repeatedly, plus several `key up: vk=0xA2` events with no matching key-down. One swallowed key-up pins a flag `True` forever, and the hotkey never arms again for the life of the process. **This is what killed dictation.**
+2. **Stale flags caused phantom arms.** At 13:22:22 a bare *Ctrl tap* armed the mic and captured 0 samples ("empty audio buffer") because a Shift key-up from two seconds earlier had never been delivered.
+
+**Fix**: an injectable `modifier_state` probe (`GetAsyncKeyState`, real physical key state) consulted at the two points where the tracked flags were being trusted — `on_tick` won't arm unless both modifiers are genuinely held, and `key_up` resyncs the flags from reality, which makes `_SUPPRESSED` escapable again. Injected rather than called directly so `HotkeyStateMachine` stays a pure testable unit; `None` preserves the old flag-only behaviour, which is what all the pre-existing tests use.
+
+**Why it was invisible**: `_hook_proc` had no try/except. `__main__.py` already documented this exact hazard for the `_on_start`/`_on_stop`/`_on_cancel` callbacks, but the guard sat one level too low — an exception in the hook proc's own body (or in the `Timer` thread) is swallowed by ctypes into a `sys.stderr` that is `None` under `pythonw.exe`, so it vanishes with zero trace while the hook keeps running. Both boundaries now log properly. **Any future "hotkey just stopped working" will leave a traceback in `dictate.log`.**
+
+**Whisper `tiny.en` → `base.en`.** Real mis-hearings from today's log: "WhatsApp"→"what's up", "bot"→"boat"/"board", "Telegram IDs"→"Telegram ideas", "I can provision"→"icon provision", "a list of numbers"→"lots of numbers". **Important caveat, don't lose this**: I benchmarked tiny/base/small on synthesized audio of those exact phrases and **all three scored 9/9** — clean TTS audio does not reproduce the failure at all, so that test could not discriminate accuracy. The change is justified on robustness to real microphone speech, not on measured accuracy. What the benchmark *did* settle is latency on this CPU: tiny 6.9x realtime, base 3.8x, **small only 1.3x** — small.en is too slow to sit between a key release and text appearing. **Still unverified against Avi's actual voice.** Retaining a debug copy of the audio would make the next quality complaint diagnosable; deliberately not added (privacy surface, not asked for).
+
+**Cleanup prompt: a new failure mode, not the Session 2 one.** At 13:17 the model turned a genuine question into a negated statement of fact and invented an ending for a clause the mic had cut off mid-word: `"...What about WhatsApp? Do I need to have a user-facing page with the QR codes for"` → `"...but I don't have a user-facing page with the QR codes for WhatsApp."` A whole sentence and a question both vanished. Note the Session 2 anti-deletion rules were already in place and did not prevent this — the missing rules were about **sentence type** and **truncated input**, not deletion.
+
+Added two rules (a question stays a question, never negate, never merge/drop sentences; if the text stops mid-sentence LEAVE IT STOPPED, no invented ending, no reordering) plus a few-shot example built from the real failure. Reproduced the bug deterministically against the live server first, then confirmed the fix **5/5 runs** (this model is known non-deterministic even at temperature 0, so single-run confirmation isn't enough here).
+
+**Statistical note**: the cleanup layer has *not* measurably regressed — rate of change is flat across every session (~50% of lines altered, ~20% shrunk >10%, on 08-20, 08-25, 08-26 and 09-05 alike). Today's failures were qualitatively worse, not more frequent. The bigger driver of "quality went to shit" was STT, not cleanup.
+
+**Keystroke logging is now opt-in** (`REDSHARK_LOG_KEYSTROKES=1`). It had been unconditionally on at DEBUG since the beginning, making `dictate.log` a plaintext keylogger of everything typed in every app — passwords included — sitting in the project root. Gitignored and never committed (history was re-checked), so nothing leaked publicly, but the local file is a real liability.
+
+**Verified**: 74 tests passing (67 → +4 hotkey regression, +3 cleanup quality), `ruff check` and `ruff format --check` clean.
+
+**Left for the user** (blocked, not skipped): the old pre-fix process was still running and holding `dictate.log` open, so it could not be deleted, and terminating it was denied by the sandbox. Quit via the tray icon, delete `dictate.log`, then relaunch to pick up `base.en` and the fixes. **The fixes are committed but have not been exercised in a live run** — the first real hold after relaunch is the actual test.
