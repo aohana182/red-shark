@@ -142,4 +142,10 @@ Added two rules (a question stays a question, never negate, never merge/drop sen
 
 **Verified**: 74 tests passing (67 → +4 hotkey regression, +3 cleanup quality), `ruff check` and `ruff format --check` clean.
 
-**Left for the user** (blocked, not skipped): the old pre-fix process was still running and holding `dictate.log` open, so it could not be deleted, and terminating it was denied by the sandbox. Quit via the tray icon, delete `dictate.log`, then relaunch to pick up `base.en` and the fixes. **The fixes are committed but have not been exercised in a live run** — the first real hold after relaunch is the actual test.
+**Live verification (same session, after the user quit and relaunched)**: confirmed working end to end. A real 3.4s hold armed and released normally -- the exact thing that was dead -- and the full pipeline ran: `transcribed: 'So, check, check, one, two, checking longer.'` -> `cleaned: 'So, check, one, two, checking longer.'` -> `injected 37 characters`. Keystroke logging confirmed off: **zero** key lines, 1074 bytes after a full session against 24MB before. The old 24MB keylog was truncated in place (it could not be deleted while held open).
+
+Timings on base.en's first call: 1.5s transcribe for 3.4s audio (~2.3x realtime, cold), 3.4s cleanup. The cleanup number is well above the ~1.1s baseline because it was that server's first request -- worth watching, not yet a known regression.
+
+**Still genuinely unproven**: whether base.en actually mishears less than tiny.en *on Avi's voice*. The synthesized-audio benchmark could not discriminate (9/9 on all three sizes). If "WhatsApp" still comes out as "what's up", small.en is the next lever, at a real latency cost (1.3x realtime).
+
+**Open**: PR #1 (`fix/dead-hotkey-and-dictation-quality` -> master) is pushed and passing but **not merged** -- master still has the dead-hotkey code.
